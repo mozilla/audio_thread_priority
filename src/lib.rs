@@ -1,24 +1,39 @@
 #[macro_use]
 extern crate cfg_if;
+#[macro_use]
+extern crate log;
+#[cfg(feature = "terminal-logging")]
+extern crate simple_logger;
 
 cfg_if! {
-    if #[cfg(macos)] {
+    if #[cfg(target_os = "macos")] {
         mod rt_mach;
 #[allow(unused, non_camel_case_types, non_snake_case, non_upper_case_globals)]
         mod mach_sys;
         extern crate mach;
         extern crate libc;
         pub use rt_mach::promote_current_thread_to_real_time;
-    } else if #[cfg(windows)] {
+        pub use rt_mach::demote_current_thread_from_real_time;
+    } else if #[cfg(target_os = "windows")] {
+        extern crate winapi;
+        mod rt_win;
         pub use rt_win::promote_current_thread_to_real_time;
+        pub use rt_win::demote_current_thread_from_real_time;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use promote_current_thread_real_time;
+    use promote_current_thread_to_real_time;
+    use demote_current_thread_from_real_time;
+    #[cfg(feature = "terminal-logging")]
+    use simple_logger;
+
     #[test]
     fn it_works() {
-        promote_current_thread_to_real_time(512, 44100).unwrap();
+        #[cfg(feature = "terminal-logging")]
+        simple_logger::init().unwrap();
+        let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
+        demote_current_thread_from_real_time(rt_prio_handle).unwrap();
     }
 }
