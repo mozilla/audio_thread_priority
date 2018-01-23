@@ -10,13 +10,15 @@ cfg_if! {
         extern crate libc;
         pub use rt_mach::promote_current_thread_to_real_time;
     } else if #[cfg(windows)] {
+        extern crate winapi;
+        mod rt_win;
         pub use rt_win::promote_current_thread_to_real_time;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use promote_current_thread_real_time;
+    use promote_current_thread_to_real_time;
     #[test]
     fn it_works() {
         promote_current_thread_to_real_time(512, 44100).unwrap();
