@@ -1,0 +1,14 @@
+[package]
+name = "audio_thread_priority"
+version = "0.1.0"
+authors = ["Paul Adenot <paul@paul.cx>"]
+
+[dependencies]
+cfg-if = "0.1"
+
+[target.'cfg(macos)'.dependencies]
+mach = "0.1"
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.5"
