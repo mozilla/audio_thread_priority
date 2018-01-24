@@ -2,6 +2,10 @@
 name = "audio_thread_priority"
 version = "0.1.0"
 authors = ["Paul Adenot <paul@paul.cx>"]
+description = "Bump a thread to real-time priority, for audio work, on Windows and macOS"
+license = "MPL-2.0"
+license-file = "LICENSE"
+repository = "https://github.com/padenot/audio_thread_priority"
 
 [dependencies]
 cfg-if = "0.1"
