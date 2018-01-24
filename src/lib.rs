@@ -16,6 +16,7 @@ cfg_if! {
         pub use rt_mach::demote_current_thread_from_real_time;
     } else if #[cfg(target_os = "windows")] {
         extern crate winapi;
+        extern crate kernel32;
         mod rt_win;
         pub use rt_win::promote_current_thread_to_real_time;
         pub use rt_win::demote_current_thread_from_real_time;
