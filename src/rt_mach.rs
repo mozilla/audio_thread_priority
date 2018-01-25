@@ -47,6 +47,22 @@ pub struct RtPriorityHandle {
     previous_time_constraint_policy: thread_time_constraint_policy_data_t,
 }
 
+impl RtPriorityHandle {
+    pub fn new() -> RtPriorityHandle {
+        return RtPriorityHandle {
+            tid: 0,
+            previous_time_share: thread_extended_policy_data_t { timeshare: 0 },
+            previous_precedence_policy: thread_precedence_policy_data_t { importance: 0},
+            previous_time_constraint_policy: thread_time_constraint_policy_data_t {
+                period: 0,
+                computation: 0,
+                constraint: 0,
+                preemptible: 0
+            }
+        }
+    }
+}
+
 pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle)
                                             -> Result<(), ()> {
     unsafe {
@@ -92,17 +108,7 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
                                            audio_samplerate_hz: u32)
                                            -> Result<RtPriorityHandle, ()> {
 
-    let mut rt_priority_handle = RtPriorityHandle {
-        tid: 0,
-        previous_time_share: thread_extended_policy_data_t { timeshare: 0 },
-        previous_precedence_policy: thread_precedence_policy_data_t { importance: 0 },
-        previous_time_constraint_policy: thread_time_constraint_policy_data_t {
-            period: 0,
-            computation: 0,
-            constraint: 0,
-            preemptible: 0,
-        },
-    };
+    let mut rt_priority_handle = RtPriorityHandle::new();
 
     // Get current thread attributes, to revert back to the correct setting later if needed.
 
