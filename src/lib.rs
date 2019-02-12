@@ -22,6 +22,13 @@ cfg_if! {
         pub use rt_win::promote_current_thread_to_real_time;
         pub use rt_win::demote_current_thread_from_real_time;
         pub use rt_win::RtPriorityHandle;
+    } else if #[cfg(target_os = "linux")] {
+        mod rt_linux;
+        extern crate dbus;
+        extern crate libc;
+        pub use rt_linux::promote_current_thread_to_real_time;
+        pub use rt_linux::demote_current_thread_from_real_time;
+        pub use rt_linux::RtPriorityHandle;
     }
 }
 
@@ -38,7 +45,7 @@ mod tests {
         #[cfg(feature = "terminal-logging")]
         simple_logger::init().unwrap();
         let rt_prio_handle = RtPriorityHandle::new();
-        rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
+        let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
         demote_current_thread_from_real_time(rt_prio_handle).unwrap();
     }
 }
