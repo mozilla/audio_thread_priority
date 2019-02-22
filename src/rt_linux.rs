@@ -40,7 +40,7 @@ fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), ::db
     r.as_result().map(|_| ())
 }
 
-fn make_realtime(prio: u32) -> Result<u32, Box<std::error::Error>> {
+fn make_realtime(max_slice_us: u64, prio: u32) -> Result<u32, Box<std::error::Error>> {
     let c = try!(Connection::get_private(BusType::System));
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
@@ -52,7 +52,12 @@ fn make_realtime(prio: u32) -> Result<u32, Box<std::error::Error>> {
 
     // Enforce RLIMIT_RTPRIO, also a must before asking rtkit for rtprio
     let max_rttime = try!(item_as_i64(try!(p.get("RTTimeUSecMax")))) as u64;
-    let new_limit = libc::rlimit64 { rlim_cur: max_rttime, rlim_max: max_rttime };
+
+    // Only take what we need, or cap at the system limit, no further.
+    let rttime_request = cmp::min(max_slice_us, max_rttime) as u64;
+
+    let new_limit = libc::rlimit64 { rlim_cur: rttime_request,
+                                     rlim_max: rttime_request };
     let mut old_limit = new_limit;
     if unsafe { libc::getrlimit64(libc::RLIMIT_RTTIME, &mut old_limit) } < 0 {
         return Err(Box::from("getrlimit failed"));
@@ -73,16 +78,17 @@ fn make_realtime(prio: u32) -> Result<u32, Box<std::error::Error>> {
     Ok(prio)
 }
 
-pub fn promote_current_thread_to_real_time(_audio_buffer_frames: u32,
-                                           _audio_samplerate_hz: u32)
+pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
+                                           audio_samplerate_hz: u32)
                                            -> Result<RtPriorityHandle, ()> {
     let mut policy = 0;
     let mut param = libc::sched_param { sched_priority: 0 };
+    let budget_us = (audio_buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
     if unsafe { libc::pthread_getschedparam(libc::pthread_self(), &mut policy, &mut param) } < 0 {
         return Err(())
     }
     let handle = RtPriorityHandle {policy: policy, param: param};
-    let r = make_realtime(RT_PRIO_DEFAULT);
+    let r = make_realtime(budget_us, RT_PRIO_DEFAULT);
     if r.is_err() {
         return Err(())
     }
