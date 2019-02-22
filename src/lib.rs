@@ -42,7 +42,6 @@ mod tests {
     fn it_works() {
         #[cfg(feature = "terminal-logging")]
         simple_logger::init().unwrap();
-        let rt_prio_handle = RtPriorityHandle::new();
         let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
         demote_current_thread_from_real_time(rt_prio_handle).unwrap();
     }
