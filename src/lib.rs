@@ -32,8 +32,8 @@ cfg_if! {
 
 #[cfg(test)]
 mod tests {
-    use promote_current_thread_to_real_time;
     use demote_current_thread_from_real_time;
+    use promote_current_thread_to_real_time;
     #[cfg(feature = "terminal-logging")]
     use simple_logger;
 
