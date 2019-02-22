@@ -7,6 +7,8 @@ use std::cmp;
 
 use dbus::{Connection, BusType, Props, MessageItem, Message};
 
+const RT_PRIO_DEFAULT: u32 = 10;
+
 /*#[derive(Debug)]*/
 pub struct RtPriorityHandle {
     policy: libc::c_int,
@@ -80,7 +82,7 @@ pub fn promote_current_thread_to_real_time(_audio_buffer_frames: u32,
         return Err(())
     }
     let handle = RtPriorityHandle {policy: policy, param: param};
-    let r = make_realtime(5);
+    let r = make_realtime(RT_PRIO_DEFAULT);
     if r.is_err() {
         return Err(())
     }
