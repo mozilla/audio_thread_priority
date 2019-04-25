@@ -11,8 +11,7 @@ struct atp_handle;
 extern "C" {
 
 /**
- * Promotes a thread to real-time priority, when the number of frames per audio
- * callback is constant.
+ * Promotes a thread to real-time priority.
  *
  * audio_buffer_frames: number of frames per audio buffer. If unknown, passing 0
  * will choose an appropriate number, conservatively. If variable, either pass 0
