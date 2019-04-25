@@ -116,6 +116,15 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
 
     // Get current thread attributes, to revert back to the correct setting later if needed.
 
+    if audio_samplerate_hz == 0 {
+        return Err(());
+    }
+
+    let mut buffer_frames = audio_buffer_frames;
+    if buffer_frames == 0 {
+        buffer_frames = audio_samplerate_hz / 20;
+    }
+
     unsafe {
         let tid: mach_port_t = pthread_mach_thread_np(pthread_self());
         let mut rv: kern_return_t;
@@ -203,7 +212,7 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
             return Err(());
         }
 
-        let cb_duration = audio_buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
+        let cb_duration = buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
         let computation = 0.6 * cb_duration;
         let constraint = 0.85 * cb_duration;
 

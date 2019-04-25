@@ -38,9 +38,14 @@ pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle
 }
 
 pub fn promote_current_thread_to_real_time(_audio_buffer_frames: u32,
-                                           _audio_samplerate_hz: u32)
+                                           audio_samplerate_hz: u32)
                                            -> Result<RtPriorityHandle, ()> {
    let mut handle = RtPriorityHandle::new();
+
+   if audio_samplerate_hz {
+       // for consistency with other platforms.
+       return Err(());
+   }
 
     unsafe {
         handle.task_handle = AvSetMmThreadCharacteristicsA("Audio".as_ptr() as _, &mut handle.mmcss_task_index);

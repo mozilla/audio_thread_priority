@@ -85,16 +85,24 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
                                            -> Result<RtPriorityHandle, ()> {
     let mut policy = 0;
     let mut param = libc::sched_param { sched_priority: 0 };
-    let budget_us = (audio_buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
+    if audio_samplerate_hz == 0 {
+        return Err(());
+    }
+    let mut buffer_frames = audio_buffer_frames;
+    if buffer_frames == 0 {
+        // 50ms slice. This "ought to be enough for anybody".
+        buffer_frames = audio_samplerate_hz / 20;
+    }
+    let budget_us = (buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
     if unsafe { libc::pthread_getschedparam(libc::pthread_self(), &mut policy, &mut param) } < 0 {
         error!("pthread_getschedparam error {}", unsafe { libc::pthread_self() });
-        return Err(())
+        return Err(());
     }
     let handle = RtPriorityHandle {policy: policy, param: param};
     let r = make_realtime(budget_us, RT_PRIO_DEFAULT);
     if r.is_err() {
         error!("Could not make thread real-time.");
-        return Err(())
+        return Err(());
     }
     return Ok(handle);
 }
