@@ -6,6 +6,10 @@ description = "Bump a thread to real-time priority, for audio work, on Windows a
 license = "MPL-2.0"
 repository = "https://github.com/padenot/audio_thread_priority"
 
+[lib]
+crate-type = ["staticlib", "rlib"]
+name = "audio_thread_priority"
+
 [dependencies]
 cfg-if = "0.1"
 log = "0.4"
