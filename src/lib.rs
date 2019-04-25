@@ -12,22 +12,22 @@ cfg_if! {
         mod mach_sys;
         extern crate mach;
         extern crate libc;
-        use rt_mach::promote_current_thread_to_real_time;
-        use rt_mach::demote_current_thread_from_real_time;
+        pub use rt_mach::promote_current_thread_to_real_time;
+        pub use rt_mach::demote_current_thread_from_real_time;
         pub use rt_mach::RtPriorityHandle;
     } else if #[cfg(target_os = "windows")] {
         extern crate winapi;
         extern crate kernel32;
         mod rt_win;
-        use rt_win::promote_current_thread_to_real_time;
-        use rt_win::demote_current_thread_from_real_time;
+        pub use rt_win::promote_current_thread_to_real_time;
+        pub use rt_win::demote_current_thread_from_real_time;
         pub use rt_win::RtPriorityHandle;
     } else if #[cfg(target_os = "linux")] {
         pub mod rt_linux;
         extern crate dbus;
         extern crate libc;
-        use rt_linux::promote_current_thread_to_real_time;
-        use rt_linux::demote_current_thread_from_real_time;
+        pub use rt_linux::promote_current_thread_to_real_time;
+        pub use rt_linux::demote_current_thread_from_real_time;
         pub use rt_linux::RtPriorityHandle;
     }
 }
