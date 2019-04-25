@@ -2,6 +2,8 @@
 extern crate cfg_if;
 #[cfg(feature = "terminal-logging")]
 extern crate simple_logger;
+#[macro_use]
+extern crate log;
 
 cfg_if! {
     if #[cfg(target_os = "macos")] {

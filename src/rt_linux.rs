@@ -87,11 +87,13 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
     let mut param = libc::sched_param { sched_priority: 0 };
     let budget_us = (audio_buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
     if unsafe { libc::pthread_getschedparam(libc::pthread_self(), &mut policy, &mut param) } < 0 {
+        error!("pthread_getschedparam error {}", unsafe { libc::pthread_self() });
         return Err(())
     }
     let handle = RtPriorityHandle {policy: policy, param: param};
     let r = make_realtime(budget_us, RT_PRIO_DEFAULT);
     if r.is_err() {
+        error!("Could not make thread real-time.");
         return Err(())
     }
     return Ok(handle);
@@ -100,6 +102,7 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
 pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle)
                                             -> Result<(), ()> {
     if unsafe { libc::pthread_setschedparam(libc::pthread_self(), rt_priority_handle.policy, &rt_priority_handle.param) } < 0 {
+        error!("could not demote thread {}", unsafe { libc::pthread_self() } );
         return Err(());
     }
     return Ok(());
