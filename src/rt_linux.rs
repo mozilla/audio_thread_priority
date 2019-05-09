@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* Widely copied from dbus-rs/dbus/examples/rtkit.rs */
 
 extern crate dbus;
@@ -10,14 +14,14 @@ use dbus::{Connection, BusType, Props, MessageItem, Message};
 const RT_PRIO_DEFAULT: u32 = 10;
 
 /*#[derive(Debug)]*/
-pub struct RtPriorityHandle {
+pub struct RtPriorityHandleInternal {
     policy: libc::c_int,
     param: libc::sched_param,
 }
 
-impl RtPriorityHandle {
-    pub fn new() -> RtPriorityHandle {
-        return RtPriorityHandle {
+impl RtPriorityHandleInternal {
+    pub fn new() -> RtPriorityHandleInternal {
+        return RtPriorityHandleInternal {
             policy: 0 as libc::c_int,
             param: libc::sched_param { sched_priority: 0 },
         }
@@ -80,14 +84,11 @@ fn make_realtime(max_slice_us: u64, prio: u32) -> Result<u32, Box<std::error::Er
     Ok(prio)
 }
 
-pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
+pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
                                            audio_samplerate_hz: u32)
-                                           -> Result<RtPriorityHandle, ()> {
+                                           -> Result<RtPriorityHandleInternal, ()> {
     let mut policy = 0;
     let mut param = libc::sched_param { sched_priority: 0 };
-    if audio_samplerate_hz == 0 {
-        return Err(());
-    }
     let mut buffer_frames = audio_buffer_frames;
     if buffer_frames == 0 {
         // 50ms slice. This "ought to be enough for anybody".
@@ -98,7 +99,7 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
         error!("pthread_getschedparam error {}", unsafe { libc::pthread_self() });
         return Err(());
     }
-    let handle = RtPriorityHandle {policy: policy, param: param};
+    let handle = RtPriorityHandleInternal {policy: policy, param: param};
     let r = make_realtime(budget_us, RT_PRIO_DEFAULT);
     if r.is_err() {
         error!("Could not make thread real-time.");
@@ -107,7 +108,7 @@ pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
     return Ok(handle);
 }
 
-pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle)
+pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
                                             -> Result<(), ()> {
     if unsafe { libc::pthread_setschedparam(libc::pthread_self(), rt_priority_handle.policy, &rt_priority_handle.param) } < 0 {
         error!("could not demote thread {}", unsafe { libc::pthread_self() } );

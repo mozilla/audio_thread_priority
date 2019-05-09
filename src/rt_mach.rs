@@ -44,16 +44,16 @@ macro_rules! THREAD_TIME_CONSTRAINT_POLICY_COUNT {
 }
 
 #[derive(Debug)]
-pub struct RtPriorityHandle {
+pub struct RtPriorityHandleInternal {
     tid: mach_port_t,
     previous_time_share: thread_extended_policy_data_t,
     previous_precedence_policy: thread_precedence_policy_data_t,
     previous_time_constraint_policy: thread_time_constraint_policy_data_t,
 }
 
-impl RtPriorityHandle {
-    pub fn new() -> RtPriorityHandle {
-        return RtPriorityHandle {
+impl RtPriorityHandleInternal {
+    pub fn new() -> RtPriorityHandleInternal {
+        return RtPriorityHandleInternal {
             tid: 0,
             previous_time_share: thread_extended_policy_data_t { timeshare: 0 },
             previous_precedence_policy: thread_precedence_policy_data_t { importance: 0},
@@ -67,7 +67,7 @@ impl RtPriorityHandle {
     }
 }
 
-pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle)
+pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
                                             -> Result<(), ()> {
     unsafe {
         let mut rv: kern_return_t;
@@ -108,18 +108,13 @@ pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle
     return Ok(());
 }
 
-pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32,
+pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
                                            audio_samplerate_hz: u32)
-                                           -> Result<RtPriorityHandle, ()> {
+                                           -> Result<RtPriorityHandleInternal, ()> {
 
-    let mut rt_priority_handle = RtPriorityHandle::new();
+    let mut rt_priority_handle = RtPriorityHandleInternal::new();
 
     // Get current thread attributes, to revert back to the correct setting later if needed.
-
-    if audio_samplerate_hz == 0 {
-        return Err(());
-    }
-
     let mut buffer_frames = audio_buffer_frames;
     if buffer_frames == 0 {
         buffer_frames = audio_samplerate_hz / 20;

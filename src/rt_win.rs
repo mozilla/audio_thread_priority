@@ -8,21 +8,21 @@ use winapi::shared::minwindef::DWORD;
 use kernel32::GetLastError;
 
 #[derive(Debug)]
-pub struct RtPriorityHandle {
+pub struct RtPriorityHandleInternal {
   mmcss_task_index: DWORD,
   task_handle: HANDLE
 }
 
-impl RtPriorityHandle {
-    pub fn new() -> RtPriorityHandle {
-        return RtPriorityHandle {
+impl RtPriorityHandleInternal {
+    pub fn new() -> RtPriorityHandleInternalInternal {
+        return RtPriorityHandleInternal {
            mmcss_task_index: 0 as DWORD,
            task_handle: 0 as HANDLE
         }
     }
 }
 
-pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle)
+pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
                                             -> Result<(), ()> {
     unsafe {
         let rv = AvRevertMmThreadCharacteristics(rt_priority_handle.task_handle);
@@ -37,15 +37,10 @@ pub fn demote_current_thread_from_real_time(rt_priority_handle: RtPriorityHandle
     return Ok(())
 }
 
-pub fn promote_current_thread_to_real_time(_audio_buffer_frames: u32,
+pub fn promote_current_thread_to_real_time_internal(_audio_buffer_frames: u32,
                                            audio_samplerate_hz: u32)
-                                           -> Result<RtPriorityHandle, ()> {
-   let mut handle = RtPriorityHandle::new();
-
-   if audio_samplerate_hz {
-       // for consistency with other platforms.
-       return Err(());
-   }
+                                           -> Result<RtPriorityHandleInternal, ()> {
+    let mut handle = RtPriorityHandleInternal::new();
 
     unsafe {
         handle.task_handle = AvSetMmThreadCharacteristicsA("Audio".as_ptr() as _, &mut handle.mmcss_task_index);
