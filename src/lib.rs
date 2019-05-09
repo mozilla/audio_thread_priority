@@ -40,15 +40,13 @@ cfg_if! {
 pub struct atp_handle(RtPriorityHandle);
 
 #[no_mangle]
-pub extern "C" fn atp_promote_current_thread_to_real_time(audio_buffer_frames: u32,
-                                           audio_samplerate_hz: u32) -> *mut atp_handle{
+pub extern "C" fn atp_promote_current_thread_to_real_time(
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> *mut atp_handle {
     match promote_current_thread_to_real_time(audio_buffer_frames, audio_samplerate_hz) {
-        Ok(handle) => {
-            Box::into_raw(Box::new(atp_handle(handle)))
-        },
-        _ => {
-            std::ptr::null_mut()
-        }
+        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
+        _ => std::ptr::null_mut(),
     }
 }
 
@@ -58,12 +56,8 @@ pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_hand
     let handle = unsafe { Box::from_raw(handle) };
 
     match demote_current_thread_from_real_time(handle.0) {
-        Ok(_) => {
-            0
-        }
-        _ => {
-            1
-        }
+        Ok(_) => 0,
+        _ => 1,
     }
 }
 
