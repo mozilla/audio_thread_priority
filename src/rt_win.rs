@@ -43,7 +43,7 @@ pub fn promote_current_thread_to_real_time_internal(_audio_buffer_frames: u32,
     let mut handle = RtPriorityHandleInternal::new();
 
     unsafe {
-        handle.task_handle = AvSetMmThreadCharacteristicsA("Audio".as_ptr() as _, &mut handle.mmcss_task_index);
+        handle.task_handle = AvSetMmThreadCharacteristicsA("Audio\0".as_ptr() as _, &mut handle.mmcss_task_index);
 
         if handle.task_handle.is_null() {
             error!("Unable to use mmcss to bump the render thread priority ({})", GetLastError());
