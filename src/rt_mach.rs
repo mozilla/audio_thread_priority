@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use mach::kern_return::kern_return_t;
+use mach::kern_return::{kern_return_t, KERN_SUCCESS};
 use mach::port::mach_port_t;
+use mach::message::mach_msg_type_number_t;
 use mach_sys::*;
-use libc::{pthread_self, pthread_t};
+use libc::{pthread_self, pthread_t, mach_timebase_info, mach_timebase_info_data_t};
 use std::mem::size_of;
 
 extern "C" {
