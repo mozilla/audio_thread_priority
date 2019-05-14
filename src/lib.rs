@@ -18,6 +18,9 @@ cfg_if! {
         extern crate libc;
         use rt_mach::promote_current_thread_to_real_time_internal;
         use rt_mach::demote_current_thread_from_real_time_internal;
+        use rt_linux::get_current_thread_info_internal;
+        use rt_linux::promote_thread_to_real_time_internal;
+        use rt_linux::RtPriorityThreadInfo;
         use rt_mach::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "windows")] {
         extern crate winapi;
@@ -25,6 +28,9 @@ cfg_if! {
         mod rt_win;
         use rt_win::promote_current_thread_to_real_time_internal;
         use rt_win::demote_current_thread_from_real_time_internal;
+        use rt_linux::get_current_thread_info_internal;
+        use rt_linux::promote_thread_to_real_time_internal;
+        use rt_linux::RtPriorityThreadInfo;
         use rt_win::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "linux")] {
         mod rt_linux;
@@ -32,12 +38,21 @@ cfg_if! {
         extern crate libc;
         use rt_linux::promote_current_thread_to_real_time_internal;
         use rt_linux::demote_current_thread_from_real_time_internal;
+        use rt_linux::get_current_thread_info_internal;
+        use rt_linux::promote_thread_to_real_time_internal;
+        use rt_linux::demote_thread_from_real_time_internal;
+        use rt_linux::RtPriorityThreadInfoInternal;
         use rt_linux::RtPriorityHandleInternal;
     }
 }
 
 /// Opaque handle to a thread handle structure.
 pub type RtPriorityHandle = RtPriorityHandleInternal;
+
+/// Opaque handle to a thread info.
+///
+/// This can be serialized to raw bytes to be sent via IPC.
+pub type RtPriorityThreadInfo = RtPriorityThreadInfoInternal;
 
 /// Promote the calling thread thread to real-time priority.
 ///
@@ -72,9 +87,44 @@ pub fn demote_current_thread_from_real_time(handle: RtPriorityHandle) -> Result<
     return demote_current_thread_from_real_time_internal(handle);
 }
 
+pub fn promote_thread_to_real_time(thread_info: RtPriorityThreadInfo,
+                                   audio_buffer_frames: u32,
+                                   audio_samplerate_hz: u32) -> Result<RtPriorityHandle, ()> {
+    if audio_samplerate_hz == 0 {
+        return Err(());
+    }
+    return promote_thread_to_real_time_internal(thread_info, audio_buffer_frames, audio_samplerate_hz);
+}
+
+pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(),()> {
+    return demote_thread_from_real_time_internal(handle);
+}
+
+/// TODO C API
+pub fn get_current_thread_info() -> Result<RtPriorityThreadInfo, ()> {
+    return get_current_thread_info_internal();
+}
+
+/// TODO C API
+pub fn thread_info_serialize(thread_info: RtPriorityThreadInfo) -> [u8; std::mem::size_of::<RtPriorityThreadInfo>()]
+{
+    return thread_info.serialize();
+}
+
+/// TODO C API
+pub fn thread_info_deserialize(bytes: [u8; std::mem::size_of::<RtPriorityThreadInfo>()]) -> RtPriorityThreadInfo
+{
+    return RtPriorityThreadInfoInternal::deserialize(bytes);
+}
+
+
 /// Opaque handle for the C API
 #[allow(non_camel_case_types)]
 pub struct atp_handle(RtPriorityHandle);
+
+/// Opaque info to a particular thread.
+#[allow(non_camel_case_types)]
+pub struct atp_thread_info(RtPriorityThreadInfo);
 
 /// Promote the calling thread thread to real-time priority, with a C API.
 ///
@@ -89,12 +139,33 @@ pub struct atp_handle(RtPriorityHandle);
 /// This function returns `NULL` in case of error: if it couldn't bump the thread, or if the
 /// `audio_samplerate_hz` is zero. It returns an opaque handle, to be passed to
 /// `atp_demote_current_thread_from_real_time` to demote the thread.
+///
+/// Additionaly, NULL can be returned in sandboxed processes on Linux, when DBUS cannot be used in
+/// the process (for example because the socket to DBUS cannot be created). If this is the case,
+/// it's necessary to get the information from the thread to promote and ask another process to
+/// promote it (maybe via another privileged process).
 #[no_mangle]
 pub extern "C" fn atp_promote_current_thread_to_real_time(
     audio_buffer_frames: u32,
     audio_samplerate_hz: u32,
 ) -> *mut atp_handle {
     match promote_current_thread_to_real_time(audio_buffer_frames, audio_samplerate_hz) {
+        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
+        _ => std::ptr::null_mut(),
+    }
+}
+/// Promote a specific thread to real-time, with a C API.
+///
+/// This is useful when the thread to promote cannot make some system calls necessary to promote
+/// it.
+#[no_mangle]
+pub extern "C" fn atp_promote_thread_to_real_time(
+    thread_info: *mut atp_thread_info,
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> *mut atp_handle {
+    let thread_info = unsafe { &mut *thread_info };
+    match promote_thread_to_real_time(thread_info.0, audio_buffer_frames, audio_samplerate_hz) {
         Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
         _ => std::ptr::null_mut(),
     }
@@ -112,6 +183,18 @@ pub extern "C" fn atp_promote_current_thread_to_real_time(
 /// 0 in case of success, non-zero in case of error.
 #[no_mangle]
 pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_handle) -> i32 {
+    assert!(!handle.is_null());
+    let handle = unsafe { Box::from_raw(handle) };
+
+    match demote_current_thread_from_real_time(handle.0) {
+        Ok(_) => 0,
+        _ => 1,
+    }
+}
+
+/// Demote a thread promoted to from real-time, with a C API.
+#[no_mangle]
+pub extern "C" fn atp_demote_thread_from_real_time(handle: *mut atp_handle) -> i32 {
     assert!(!handle.is_null());
     let handle = unsafe { Box::from_raw(handle) };
 
@@ -144,10 +227,31 @@ pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
     0
 }
 
+/// Get the calling threads' information, to promote it from another process or thread.
+///
+/// TODO More docs
+#[no_mangle]
+pub extern "C" fn atp_get_current_thread_info() -> *mut atp_thread_info {
+    match get_current_thread_info() {
+        Ok(thread_info) => Box::into_raw(Box::new(atp_thread_info(thread_info))),
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// Frees a thread info, with a c api.
+/// TODO More docs
+#[no_mangle]
+pub extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info) -> i32 {
+    if thread_info.is_null() {
+        return 1;
+    }
+    unsafe { Box::from_raw(thread_info) };
+    0
+}
+
 #[cfg(test)]
 mod tests {
-    use demote_current_thread_from_real_time;
-    use promote_current_thread_to_real_time;
+    use super::*;
     #[cfg(feature = "terminal-logging")]
     use simple_logger;
 
@@ -167,8 +271,24 @@ mod tests {
             demote_current_thread_from_real_time(rt_prio_handle).unwrap();
         }
         {
-            let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
+            let _rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
             // automatically deallocated, but not demoted until the thread exits.
+        }
+        {
+            let info = get_current_thread_info().unwrap();
+            let _rt_prio_handle = promote_thread_to_real_time(info, 512, 44100).unwrap();
+        }
+        {
+            let info = get_current_thread_info().unwrap();
+            let bytes = info.serialize();
+            let info2 = RtPriorityThreadInfo::deserialize(bytes);
+            assert!(info == info2);
+        }
+        {
+            let info = get_current_thread_info().unwrap();
+            let bytes = thread_info_serialize(info);
+            let info2 = thread_info_deserialize(bytes);
+            assert!(info == info2);
         }
     }
 }
