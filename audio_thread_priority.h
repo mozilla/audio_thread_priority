@@ -31,5 +31,15 @@ atp_handle *atp_promote_current_thread_to_real_time(uint32_t audio_buffer_frames
  */
 int32_t atp_demote_current_thread_from_real_time(atp_handle *handle);
 
+/**
+ * Frees an atp_handle. This is useful when it impractical to call
+ *`atp_demote_current_thread_from_real_time` on the right thread. Access to the
+ * handle must be synchronized externaly (or the related thread must have
+ * exited).
+ *
+ * Returns 0 in case of success, non-zero otherwise.
+ */
+int32_t atp_free_handle(atp_handle *handle);
+
 
 } // extern "C"

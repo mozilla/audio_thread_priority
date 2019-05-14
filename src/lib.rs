@@ -121,6 +121,29 @@ pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_hand
     }
 }
 
+/// Frees a handle, with a C API.
+///
+/// This is useful when it impractical to call `atp_demote_current_thread_from_real_time` on the
+/// right thread. Access to the handle must be synchronized externaly, or the thread that was
+/// promoted to real-time priority must have exited.
+///
+/// # Arguments
+///
+/// * `atp_handle` - An opaque struct returned from a successful call to
+/// `atp_promote_current_thread_to_real_time`.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero in case of error.
+#[no_mangle]
+pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
+    if handle.is_null() {
+        return 1;
+    }
+    let _handle = unsafe { Box::from_raw(handle) };
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use demote_current_thread_from_real_time;
@@ -142,6 +165,10 @@ mod tests {
         {
             let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
             demote_current_thread_from_real_time(rt_prio_handle).unwrap();
+        }
+        {
+            let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
+            // automatically deallocated, but not demoted until the thread exits.
         }
     }
 }
