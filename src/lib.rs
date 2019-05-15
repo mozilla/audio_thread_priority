@@ -18,9 +18,6 @@ cfg_if! {
         extern crate libc;
         use rt_mach::promote_current_thread_to_real_time_internal;
         use rt_mach::demote_current_thread_from_real_time_internal;
-        use rt_linux::get_current_thread_info_internal;
-        use rt_linux::promote_thread_to_real_time_internal;
-        use rt_linux::RtPriorityThreadInfo;
         use rt_mach::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "windows")] {
         extern crate winapi;
@@ -28,9 +25,7 @@ cfg_if! {
         mod rt_win;
         use rt_win::promote_current_thread_to_real_time_internal;
         use rt_win::demote_current_thread_from_real_time_internal;
-        use rt_linux::get_current_thread_info_internal;
-        use rt_linux::promote_thread_to_real_time_internal;
-        use rt_linux::RtPriorityThreadInfo;
+        use rt_win::get_current_thread_info_internal;
         use rt_win::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "linux")] {
         mod rt_linux;
@@ -52,6 +47,9 @@ pub type RtPriorityHandle = RtPriorityHandleInternal;
 /// Opaque handle to a thread info.
 ///
 /// This can be serialized to raw bytes to be sent via IPC.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
 pub type RtPriorityThreadInfo = RtPriorityThreadInfoInternal;
 
 /// Promote the calling thread thread to real-time priority.
@@ -87,6 +85,23 @@ pub fn demote_current_thread_from_real_time(handle: RtPriorityHandle) -> Result<
     return demote_current_thread_from_real_time_internal(handle);
 }
 
+/// Promote a particular thread thread to real-time priority.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// * `thread_info` - informations about the thread to promote, gathered using
+/// `get_current_thread_info`.
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
+/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
 pub fn promote_thread_to_real_time(thread_info: RtPriorityThreadInfo,
                                    audio_buffer_frames: u32,
                                    audio_samplerate_hz: u32) -> Result<RtPriorityHandle, ()> {
@@ -96,27 +111,59 @@ pub fn promote_thread_to_real_time(thread_info: RtPriorityThreadInfo,
     return promote_thread_to_real_time_internal(thread_info, audio_buffer_frames, audio_samplerate_hz);
 }
 
+/// Demotes a thread from real-time priority.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// * `handle` - An opaque struct returned from a successful call to
+/// `promote_thread_to_real_time`.
+///
+/// # Return value
+///
+/// `Ok` in scase of success, `Err` otherwise.
 pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(),()> {
     return demote_thread_from_real_time_internal(handle);
 }
 
-/// TODO C API
+/// Get the calling thread's information, to be able to promote it to real-time from somewhere
+/// else, later.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Return value
+///
+/// Ok in case of success, with an opaque structure containing relevant info for the platform, Err
+/// otherwise.
 pub fn get_current_thread_info() -> Result<RtPriorityThreadInfo, ()> {
     return get_current_thread_info_internal();
 }
 
-/// TODO C API
+/// Return a byte buffer containing serialized information about a thread, to promote it to
+/// real-time from elsewhere.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
 pub fn thread_info_serialize(thread_info: RtPriorityThreadInfo) -> [u8; std::mem::size_of::<RtPriorityThreadInfo>()]
 {
     return thread_info.serialize();
 }
 
-/// TODO C API
+/// From a byte buffer, return a `RtPriorityThreadInfo`.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// A byte buffer containing a serializezd `RtPriorityThreadInfo`.
 pub fn thread_info_deserialize(bytes: [u8; std::mem::size_of::<RtPriorityThreadInfo>()]) -> RtPriorityThreadInfo
 {
     return RtPriorityThreadInfoInternal::deserialize(bytes);
 }
-
 
 /// Opaque handle for the C API
 #[allow(non_camel_case_types)]
@@ -158,6 +205,18 @@ pub extern "C" fn atp_promote_current_thread_to_real_time(
 ///
 /// This is useful when the thread to promote cannot make some system calls necessary to promote
 /// it.
+///
+/// # Arguments
+///
+/// `thread_info` - the information of the thread to promote to real-time, gather from calling
+/// `atp_get_current_thread_info` on the thread to promote.
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// A pointer to an `atp_handle` in case of success, NULL otherwise.
 #[no_mangle]
 pub extern "C" fn atp_promote_thread_to_real_time(
     thread_info: *mut atp_thread_info,
@@ -193,6 +252,14 @@ pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_hand
 }
 
 /// Demote a thread promoted to from real-time, with a C API.
+///
+/// # Arguments
+///
+/// `handle` -  an opaque struct received from a promoting function.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero otherwise.
 #[no_mangle]
 pub extern "C" fn atp_demote_thread_from_real_time(handle: *mut atp_handle) -> i32 {
     assert!(!handle.is_null());
@@ -227,9 +294,18 @@ pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
     0
 }
 
-/// Get the calling threads' information, to promote it from another process or thread.
+/// Get the calling threads' information, to promote it from another process or thread, with a C
+/// API.
 ///
-/// TODO More docs
+/// This is intended to call on the thread that will end up being promoted to real time priority,
+/// but that cannot do it itself (probably because of sandboxing reasons).
+///
+/// After use, it MUST be freed by calling `atp_free_thread_info`.
+///
+/// # Return value
+///
+/// A pointer to a struct that can be serialized and deserialized, and that can be passed to
+/// `atp_promote_thread_to_real_time`, even from another process.
 #[no_mangle]
 pub extern "C" fn atp_get_current_thread_info() -> *mut atp_thread_info {
     match get_current_thread_info() {
@@ -239,7 +315,14 @@ pub extern "C" fn atp_get_current_thread_info() -> *mut atp_thread_info {
 }
 
 /// Frees a thread info, with a c api.
-/// TODO More docs
+///
+/// # Arguments
+///
+/// thread_info: the `atp_thread_info` structure to free.
+///
+/// # Return value
+///
+/// 0 in case of success, 1 otherwise (if `thread_info` is NULL).
 #[no_mangle]
 pub extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info) -> i32 {
     if thread_info.is_null() {
@@ -247,6 +330,40 @@ pub extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info) -> i32
     }
     unsafe { Box::from_raw(thread_info) };
     0
+}
+
+/// Return a byte buffer containing serialized information about a thread, to promote it to
+/// real-time from elsewhere, with a C API.
+///
+/// `bytes` MUST be `atp_get_thread_info_size` long.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed, cannot promote itself
+/// directly, and the `atp_thread_info` struct must be passed via IPC.
+#[no_mangle]
+pub extern "C" fn atp_serialize_thread_info(thread_info: *mut atp_thread_info, bytes: *mut libc::c_void)
+{
+
+    let thread_info = unsafe { &mut *thread_info };
+    let source = thread_info.0.serialize();
+    unsafe {
+        std::ptr::copy(source.as_ptr(), bytes as *mut u8, source.len());
+    }
+}
+
+/// From a byte buffer, return a `RtPriorityThreadInfo`, with a C API.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// A byte buffer containing a serializezd `RtPriorityThreadInfo`.
+#[no_mangle]
+pub extern "C" fn atp_deserialize_thread_info(in_bytes: *mut libc::uint8_t) -> *mut atp_thread_info
+{
+    let bytes = unsafe { *(in_bytes as *mut [u8; 24]) };
+    let thread_info = RtPriorityThreadInfoInternal::deserialize(bytes);
+    return Box::into_raw(Box::new(atp_thread_info(thread_info)));
 }
 
 #[cfg(test)]
