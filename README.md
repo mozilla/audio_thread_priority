@@ -27,6 +27,10 @@ Synopsis:
 
 ```
 
+This library can also be used from C or C++ using the included header and
+compiling the rust code in the application. By default, a `.a` is compiled to
+ease linking.
+
 # License
 
 MPL-2

@@ -64,7 +64,10 @@ pub type RtPriorityThreadInfo = RtPriorityThreadInfoInternal;
 ///
 /// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
 /// `demote_current_thread_from_real_time` to revert to the previous thread priority.
-pub fn promote_current_thread_to_real_time(audio_buffer_frames: u32, audio_samplerate_hz: u32) -> Result<RtPriorityHandle, ()> {
+pub fn promote_current_thread_to_real_time(
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandle, ()> {
     if audio_samplerate_hz == 0 {
         return Err(());
     }
@@ -102,13 +105,19 @@ pub fn demote_current_thread_from_real_time(handle: RtPriorityHandle) -> Result<
 ///
 /// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
 /// `demote_current_thread_from_real_time` to revert to the previous thread priority.
-pub fn promote_thread_to_real_time(thread_info: RtPriorityThreadInfo,
-                                   audio_buffer_frames: u32,
-                                   audio_samplerate_hz: u32) -> Result<RtPriorityHandle, ()> {
+pub fn promote_thread_to_real_time(
+    thread_info: RtPriorityThreadInfo,
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandle, ()> {
     if audio_samplerate_hz == 0 {
         return Err(());
     }
-    return promote_thread_to_real_time_internal(thread_info, audio_buffer_frames, audio_samplerate_hz);
+    return promote_thread_to_real_time_internal(
+        thread_info,
+        audio_buffer_frames,
+        audio_samplerate_hz,
+    );
 }
 
 /// Demotes a thread from real-time priority.
@@ -124,7 +133,7 @@ pub fn promote_thread_to_real_time(thread_info: RtPriorityThreadInfo,
 /// # Return value
 ///
 /// `Ok` in scase of success, `Err` otherwise.
-pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(),()> {
+pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
     return demote_thread_from_real_time_internal(handle);
 }
 
@@ -147,8 +156,9 @@ pub fn get_current_thread_info() -> Result<RtPriorityThreadInfo, ()> {
 ///
 /// This call is useful on Linux desktop only, when the process is sandboxed and
 /// cannot promote itself directly.
-pub fn thread_info_serialize(thread_info: RtPriorityThreadInfo) -> [u8; std::mem::size_of::<RtPriorityThreadInfo>()]
-{
+pub fn thread_info_serialize(
+    thread_info: RtPriorityThreadInfo,
+) -> [u8; std::mem::size_of::<RtPriorityThreadInfo>()] {
     return thread_info.serialize();
 }
 
@@ -160,8 +170,9 @@ pub fn thread_info_serialize(thread_info: RtPriorityThreadInfo) -> [u8; std::mem
 /// # Arguments
 ///
 /// A byte buffer containing a serializezd `RtPriorityThreadInfo`.
-pub fn thread_info_deserialize(bytes: [u8; std::mem::size_of::<RtPriorityThreadInfo>()]) -> RtPriorityThreadInfo
-{
+pub fn thread_info_deserialize(
+    bytes: [u8; std::mem::size_of::<RtPriorityThreadInfo>()],
+) -> RtPriorityThreadInfo {
     return RtPriorityThreadInfoInternal::deserialize(bytes);
 }
 
@@ -340,9 +351,10 @@ pub extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info) -> i32
 /// This call is useful on Linux desktop only, when the process is sandboxed, cannot promote itself
 /// directly, and the `atp_thread_info` struct must be passed via IPC.
 #[no_mangle]
-pub extern "C" fn atp_serialize_thread_info(thread_info: *mut atp_thread_info, bytes: *mut libc::c_void)
-{
-
+pub extern "C" fn atp_serialize_thread_info(
+    thread_info: *mut atp_thread_info,
+    bytes: *mut libc::c_void,
+) {
     let thread_info = unsafe { &mut *thread_info };
     let source = thread_info.0.serialize();
     unsafe {
@@ -359,8 +371,9 @@ pub extern "C" fn atp_serialize_thread_info(thread_info: *mut atp_thread_info, b
 ///
 /// A byte buffer containing a serializezd `RtPriorityThreadInfo`.
 #[no_mangle]
-pub extern "C" fn atp_deserialize_thread_info(in_bytes: *mut libc::uint8_t) -> *mut atp_thread_info
-{
+pub extern "C" fn atp_deserialize_thread_info(
+    in_bytes: *mut libc::uint8_t,
+) -> *mut atp_thread_info {
     let bytes = unsafe { *(in_bytes as *mut [u8; 24]) };
     let thread_info = RtPriorityThreadInfoInternal::deserialize(bytes);
     return Box::into_raw(Box::new(atp_thread_info(thread_info)));
