@@ -12,6 +12,7 @@ use std::convert::TryInto;
 
 use dbus::{Connection, BusType, Props, MessageItem, Message};
 
+const DBUS_SOCKET_TIMEOUT: i32 = 10_000;
 const RT_PRIO_DEFAULT: u32 = 10;
 // This is different from libc::pid_t, which is 32 bits, and is defined in sys/types.h.
 #[allow(non_camel_case_types)]
@@ -75,31 +76,37 @@ fn item_as_i64(i: MessageItem) -> Result<i64, Box<std::error::Error>> {
     }
 }
 
-fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), ::dbus::Error> {
+fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<std::error::Error>> {
     let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
                                          "/org/freedesktop/RealtimeKit1",
                                          "org.freedesktop.RealtimeKit1",
-                                         "MakeThreadRealtime").unwrap();
+                                         "MakeThreadRealtime")?;
     m.append_items(&[thread.into(), prio.into()]);
-    let mut r = try!(c.send_with_reply_and_block(m, 10000));
-    r.as_result().map(|_| ())
+    c.send_with_reply_and_block(m, DBUS_SOCKET_TIMEOUT)?;
+    return Ok(());
 }
 
 fn make_realtime(tid: kernel_pid_t, max_slice_us: u64, prio: u32) -> Result<u32, Box<std::error::Error>> {
     let c = try!(Connection::get_private(BusType::System));
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
-        "org.freedesktop.RealtimeKit1", 10000);
+        "org.freedesktop.RealtimeKit1", DBUS_SOCKET_TIMEOUT);
 
     // Make sure we don't fail by wanting too much
-    let max_prio = try!(item_as_i64(try!(p.get("MaxRealtimePriority")))) as u32;
-    let prio = cmp::min(prio, max_prio);
+    let max_prio = item_as_i64(p.get("MaxRealtimePriority")?)?;
+    if max_prio < 0 {
+        return Err(Box::from("invalid negative MaxRealtimePriority"));
+    }
+    let prio = cmp::min(prio, max_prio as u32);
 
     // Enforce RLIMIT_RTPRIO, also a must before asking rtkit for rtprio
-    let max_rttime = try!(item_as_i64(try!(p.get("RTTimeUSecMax")))) as u64;
+    let max_rttime = item_as_i64(p.get("RTTimeUSecMax")?)?;
+    if max_rttime < 0 {
+        return Err(Box::from("invalid negative RTTimeUSecMax"));
+    }
 
     // Only take what we need, or cap at the system limit, no further.
-    let rttime_request = cmp::min(max_slice_us, max_rttime) as u64;
+    let rttime_request = cmp::min(max_slice_us, max_rttime as u64);
 
     let new_limit = libc::rlimit64 { rlim_cur: rttime_request,
                                      rlim_max: rttime_request };
@@ -116,9 +123,9 @@ fn make_realtime(tid: kernel_pid_t, max_slice_us: u64, prio: u32) -> Result<u32,
 
     if r.is_err() {
         unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &old_limit) };
+        return Err(Box::from("could not set process as real-time."));
     }
 
-    try!(r);
     Ok(prio)
 }
 
@@ -181,11 +188,12 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
 {
     let RtPriorityThreadInfoInternal { thread_id, .. } = thread_info;
 
-    let mut buffer_frames = audio_buffer_frames;
-    if buffer_frames == 0 {
+    let buffer_frames = if audio_buffer_frames > 0 {
+        audio_buffer_frames
+    } else {
         // 50ms slice. This "ought to be enough for anybody".
-        buffer_frames = audio_samplerate_hz / 20;
-    }
+        audio_samplerate_hz / 20
+    };
     let budget_us = (buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
     let handle = RtPriorityHandleInternal { thread_info };
     let r = make_realtime(thread_id, budget_us, RT_PRIO_DEFAULT);

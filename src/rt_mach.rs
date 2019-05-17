@@ -115,11 +115,11 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
 
     let mut rt_priority_handle = RtPriorityHandleInternal::new();
 
-    // Get current thread attributes, to revert back to the correct setting later if needed.
-    let mut buffer_frames = audio_buffer_frames;
-    if buffer_frames == 0 {
-        buffer_frames = audio_samplerate_hz / 20;
-    }
+    let buffer_frames = if buffer_frames > 0 {
+        audio_buffer_frames
+    } else {
+        buffer_frames = audio_samplerate_hz / 20
+    };
 
     unsafe {
         let tid: mach_port_t = pthread_mach_thread_np(pthread_self());
@@ -135,6 +135,7 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
         let mut count: mach_msg_type_number_t;
 
 
+        // Get current thread attributes, to revert back to the correct setting later if needed.
         rt_priority_handle.tid = tid;
 
         // false: we want to get the current value, not the default value. If this is `false` after
@@ -209,6 +210,7 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
         }
 
         let cb_duration = buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
+        // The multiplicators are somwhat arbitrary for now.
         let computation = 0.6 * cb_duration;
         let constraint = 0.85 * cb_duration;
 
