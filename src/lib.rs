@@ -346,7 +346,9 @@ pub extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info) -> i32
 /// Return a byte buffer containing serialized information about a thread, to promote it to
 /// real-time from elsewhere, with a C API.
 ///
-/// `bytes` MUST be `atp_get_thread_info_size` long.
+/// `bytes` MUST be `std::mem::size_of<RtPriorityThreadInfo>()` bytes long.
+///
+/// This is exposed in the C API as `ATP_THREAD_INFO_SIZE`.
 ///
 /// This call is useful on Linux desktop only, when the process is sandboxed, cannot promote itself
 /// directly, and the `atp_thread_info` struct must be passed via IPC.
