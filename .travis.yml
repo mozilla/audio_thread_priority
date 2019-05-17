@@ -3,6 +3,7 @@ addons:
   apt:
     packages:
       - libdbus-1-dev
+      - pulseaudio
 os:
   - linux
   - osx
