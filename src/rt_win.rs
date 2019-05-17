@@ -14,7 +14,7 @@ pub struct RtPriorityHandleInternal {
 }
 
 impl RtPriorityHandleInternal {
-    pub fn new() -> RtPriorityHandleInternalInternal {
+    pub fn new() -> RtPriorityHandleInternal {
         return RtPriorityHandleInternal {
            mmcss_task_index: 0 as DWORD,
            task_handle: 0 as HANDLE
@@ -32,13 +32,13 @@ pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPrior
         }
     }
 
-    info!("task {} priority restored.", handle.mmcss_task_index);
+    info!("task {} priority restored.", rt_priority_handle.mmcss_task_index);
 
     return Ok(())
 }
 
 pub fn promote_current_thread_to_real_time_internal(_audio_buffer_frames: u32,
-                                           audio_samplerate_hz: u32)
+                                           _audio_samplerate_hz: u32)
                                            -> Result<RtPriorityHandleInternal, ()> {
     let mut handle = RtPriorityHandleInternal::new();
 

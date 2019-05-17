@@ -25,7 +25,6 @@ cfg_if! {
         mod rt_win;
         use rt_win::promote_current_thread_to_real_time_internal;
         use rt_win::demote_current_thread_from_real_time_internal;
-        use rt_win::get_current_thread_info_internal;
         use rt_win::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "linux")] {
         mod rt_linux;
@@ -44,6 +43,8 @@ cfg_if! {
 /// Opaque handle to a thread handle structure.
 pub type RtPriorityHandle = RtPriorityHandleInternal;
 
+cfg_if! {
+    if #[cfg(target_os = "linux")] {
 /// Opaque handle to a thread info.
 ///
 /// This can be serialized to raw bytes to be sent via IPC.
@@ -52,90 +53,6 @@ pub type RtPriorityHandle = RtPriorityHandleInternal;
 /// cannot promote itself directly.
 pub type RtPriorityThreadInfo = RtPriorityThreadInfoInternal;
 
-/// Promote the calling thread thread to real-time priority.
-///
-/// # Arguments
-///
-/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
-/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
-///
-/// # Return value
-///
-/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
-/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
-pub fn promote_current_thread_to_real_time(
-    audio_buffer_frames: u32,
-    audio_samplerate_hz: u32,
-) -> Result<RtPriorityHandle, ()> {
-    if audio_samplerate_hz == 0 {
-        return Err(());
-    }
-    return promote_current_thread_to_real_time_internal(audio_buffer_frames, audio_samplerate_hz);
-}
-
-/// Demotes the calling thread from real-time priority.
-///
-/// # Arguments
-///
-/// * `handle` - An opaque struct returned from a successful call to
-/// `promote_current_thread_to_real_time`.
-///
-/// # Return value
-///
-/// `Ok` in scase of success, `Err` otherwise.
-pub fn demote_current_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
-    return demote_current_thread_from_real_time_internal(handle);
-}
-
-/// Promote a particular thread thread to real-time priority.
-///
-/// This call is useful on Linux desktop only, when the process is sandboxed and
-/// cannot promote itself directly.
-///
-/// # Arguments
-///
-/// * `thread_info` - informations about the thread to promote, gathered using
-/// `get_current_thread_info`.
-/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
-/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
-///
-/// # Return value
-///
-/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
-/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
-pub fn promote_thread_to_real_time(
-    thread_info: RtPriorityThreadInfo,
-    audio_buffer_frames: u32,
-    audio_samplerate_hz: u32,
-) -> Result<RtPriorityHandle, ()> {
-    if audio_samplerate_hz == 0 {
-        return Err(());
-    }
-    return promote_thread_to_real_time_internal(
-        thread_info,
-        audio_buffer_frames,
-        audio_samplerate_hz,
-    );
-}
-
-/// Demotes a thread from real-time priority.
-///
-/// This call is useful on Linux desktop only, when the process is sandboxed and
-/// cannot promote itself directly.
-///
-/// # Arguments
-///
-/// * `handle` - An opaque struct returned from a successful call to
-/// `promote_thread_to_real_time`.
-///
-/// # Return value
-///
-/// `Ok` in scase of success, `Err` otherwise.
-pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
-    return demote_thread_from_real_time_internal(handle);
-}
 
 /// Get the calling thread's information, to be able to promote it to real-time from somewhere
 /// else, later.
@@ -174,135 +91,6 @@ pub fn thread_info_deserialize(
     bytes: [u8; std::mem::size_of::<RtPriorityThreadInfo>()],
 ) -> RtPriorityThreadInfo {
     return RtPriorityThreadInfoInternal::deserialize(bytes);
-}
-
-/// Opaque handle for the C API
-#[allow(non_camel_case_types)]
-pub struct atp_handle(RtPriorityHandle);
-
-/// Opaque info to a particular thread.
-#[allow(non_camel_case_types)]
-pub struct atp_thread_info(RtPriorityThreadInfo);
-
-/// Promote the calling thread thread to real-time priority, with a C API.
-///
-/// # Arguments
-///
-/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
-/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
-///
-/// # Return value
-///
-/// This function returns `NULL` in case of error: if it couldn't bump the thread, or if the
-/// `audio_samplerate_hz` is zero. It returns an opaque handle, to be passed to
-/// `atp_demote_current_thread_from_real_time` to demote the thread.
-///
-/// Additionaly, NULL can be returned in sandboxed processes on Linux, when DBUS cannot be used in
-/// the process (for example because the socket to DBUS cannot be created). If this is the case,
-/// it's necessary to get the information from the thread to promote and ask another process to
-/// promote it (maybe via another privileged process).
-#[no_mangle]
-pub extern "C" fn atp_promote_current_thread_to_real_time(
-    audio_buffer_frames: u32,
-    audio_samplerate_hz: u32,
-) -> *mut atp_handle {
-    match promote_current_thread_to_real_time(audio_buffer_frames, audio_samplerate_hz) {
-        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
-        _ => std::ptr::null_mut(),
-    }
-}
-/// Promote a specific thread to real-time, with a C API.
-///
-/// This is useful when the thread to promote cannot make some system calls necessary to promote
-/// it.
-///
-/// # Arguments
-///
-/// `thread_info` - the information of the thread to promote to real-time, gather from calling
-/// `atp_get_current_thread_info` on the thread to promote.
-/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
-/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
-///
-/// # Return value
-///
-/// A pointer to an `atp_handle` in case of success, NULL otherwise.
-#[no_mangle]
-pub extern "C" fn atp_promote_thread_to_real_time(
-    thread_info: *mut atp_thread_info,
-    audio_buffer_frames: u32,
-    audio_samplerate_hz: u32,
-) -> *mut atp_handle {
-    let thread_info = unsafe { &mut *thread_info };
-    match promote_thread_to_real_time(thread_info.0, audio_buffer_frames, audio_samplerate_hz) {
-        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
-        _ => std::ptr::null_mut(),
-    }
-}
-
-/// Demotes the calling thread from real-time priority, with a C API.
-///
-/// # Arguments
-///
-/// * `atp_handle` - An opaque struct returned from a successful call to
-/// `atp_promote_current_thread_to_real_time`.
-///
-/// # Return value
-///
-/// 0 in case of success, non-zero in case of error.
-#[no_mangle]
-pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_handle) -> i32 {
-    assert!(!handle.is_null());
-    let handle = unsafe { Box::from_raw(handle) };
-
-    match demote_current_thread_from_real_time(handle.0) {
-        Ok(_) => 0,
-        _ => 1,
-    }
-}
-
-/// Demote a thread promoted to from real-time, with a C API.
-///
-/// # Arguments
-///
-/// `handle` -  an opaque struct received from a promoting function.
-///
-/// # Return value
-///
-/// 0 in case of success, non-zero otherwise.
-#[no_mangle]
-pub extern "C" fn atp_demote_thread_from_real_time(handle: *mut atp_handle) -> i32 {
-    assert!(!handle.is_null());
-    let handle = unsafe { Box::from_raw(handle) };
-
-    match demote_current_thread_from_real_time(handle.0) {
-        Ok(_) => 0,
-        _ => 1,
-    }
-}
-
-/// Frees a handle, with a C API.
-///
-/// This is useful when it impractical to call `atp_demote_current_thread_from_real_time` on the
-/// right thread. Access to the handle must be synchronized externaly, or the thread that was
-/// promoted to real-time priority must have exited.
-///
-/// # Arguments
-///
-/// * `atp_handle` - An opaque struct returned from a successful call to
-/// `atp_promote_current_thread_to_real_time`.
-///
-/// # Return value
-///
-/// 0 in case of success, non-zero in case of error.
-#[no_mangle]
-pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
-    if handle.is_null() {
-        return 1;
-    }
-    let _handle = unsafe { Box::from_raw(handle) };
-    0
 }
 
 /// Get the calling threads' information, to promote it from another process or thread, with a C
@@ -381,15 +169,232 @@ pub extern "C" fn atp_deserialize_thread_info(
     return Box::into_raw(Box::new(atp_thread_info(thread_info)));
 }
 
+/// Promote a particular thread thread to real-time priority.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// * `thread_info` - informations about the thread to promote, gathered using
+/// `get_current_thread_info`.
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
+/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
+pub fn promote_thread_to_real_time(
+    thread_info: RtPriorityThreadInfo,
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandle, ()> {
+    if audio_samplerate_hz == 0 {
+        return Err(());
+    }
+    return promote_thread_to_real_time_internal(
+        thread_info,
+        audio_buffer_frames,
+        audio_samplerate_hz,
+    );
+}
+
+/// Demotes a thread from real-time priority.
+///
+/// This call is useful on Linux desktop only, when the process is sandboxed and
+/// cannot promote itself directly.
+///
+/// # Arguments
+///
+/// * `handle` - An opaque struct returned from a successful call to
+/// `promote_thread_to_real_time`.
+///
+/// # Return value
+///
+/// `Ok` in scase of success, `Err` otherwise.
+pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
+    return demote_thread_from_real_time_internal(handle);
+}
+
+/// Opaque info to a particular thread.
+#[allow(non_camel_case_types)]
+pub struct atp_thread_info(RtPriorityThreadInfo);
+
+/// Promote a specific thread to real-time, with a C API.
+///
+/// This is useful when the thread to promote cannot make some system calls necessary to promote
+/// it.
+///
+/// # Arguments
+///
+/// `thread_info` - the information of the thread to promote to real-time, gather from calling
+/// `atp_get_current_thread_info` on the thread to promote.
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// A pointer to an `atp_handle` in case of success, NULL otherwise.
+#[no_mangle]
+pub extern "C" fn atp_promote_thread_to_real_time(
+    thread_info: *mut atp_thread_info,
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> *mut atp_handle {
+    let thread_info = unsafe { &mut *thread_info };
+    match promote_thread_to_real_time(thread_info.0, audio_buffer_frames, audio_samplerate_hz) {
+        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
+        _ => std::ptr::null_mut(),
+    }
+}
+
+}
+}
+
+/// Promote the calling thread thread to real-time priority.
+///
+/// # Arguments
+///
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
+/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
+pub fn promote_current_thread_to_real_time(
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandle, ()> {
+    if audio_samplerate_hz == 0 {
+        return Err(());
+    }
+    return promote_current_thread_to_real_time_internal(audio_buffer_frames, audio_samplerate_hz);
+}
+
+/// Demotes the calling thread from real-time priority.
+///
+/// # Arguments
+///
+/// * `handle` - An opaque struct returned from a successful call to
+/// `promote_current_thread_to_real_time`.
+///
+/// # Return value
+///
+/// `Ok` in scase of success, `Err` otherwise.
+pub fn demote_current_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
+    return demote_current_thread_from_real_time_internal(handle);
+}
+
+/// Opaque handle for the C API
+#[allow(non_camel_case_types)]
+pub struct atp_handle(RtPriorityHandle);
+
+/// Promote the calling thread thread to real-time priority, with a C API.
+///
+/// # Arguments
+///
+/// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
+/// rendered each callback, or 0 for a sensible default value.
+/// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
+///
+/// # Return value
+///
+/// This function returns `NULL` in case of error: if it couldn't bump the thread, or if the
+/// `audio_samplerate_hz` is zero. It returns an opaque handle, to be passed to
+/// `atp_demote_current_thread_from_real_time` to demote the thread.
+///
+/// Additionaly, NULL can be returned in sandboxed processes on Linux, when DBUS cannot be used in
+/// the process (for example because the socket to DBUS cannot be created). If this is the case,
+/// it's necessary to get the information from the thread to promote and ask another process to
+/// promote it (maybe via another privileged process).
+#[no_mangle]
+pub extern "C" fn atp_promote_current_thread_to_real_time(
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> *mut atp_handle {
+    match promote_current_thread_to_real_time(audio_buffer_frames, audio_samplerate_hz) {
+        Ok(handle) => Box::into_raw(Box::new(atp_handle(handle))),
+        _ => std::ptr::null_mut(),
+    }
+}
+/// Demotes the calling thread from real-time priority, with a C API.
+///
+/// # Arguments
+///
+/// * `atp_handle` - An opaque struct returned from a successful call to
+/// `atp_promote_current_thread_to_real_time`.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero in case of error.
+#[no_mangle]
+pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_handle) -> i32 {
+    assert!(!handle.is_null());
+    let handle = unsafe { Box::from_raw(handle) };
+
+    match demote_current_thread_from_real_time(handle.0) {
+        Ok(_) => 0,
+        _ => 1,
+    }
+}
+
+/// Demote a thread promoted to from real-time, with a C API.
+///
+/// # Arguments
+///
+/// `handle` -  an opaque struct received from a promoting function.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero otherwise.
+#[no_mangle]
+pub extern "C" fn atp_demote_thread_from_real_time(handle: *mut atp_handle) -> i32 {
+    assert!(!handle.is_null());
+    let handle = unsafe { Box::from_raw(handle) };
+
+    match demote_current_thread_from_real_time(handle.0) {
+        Ok(_) => 0,
+        _ => 1,
+    }
+}
+
+/// Frees a handle, with a C API.
+///
+/// This is useful when it impractical to call `atp_demote_current_thread_from_real_time` on the
+/// right thread. Access to the handle must be synchronized externaly, or the thread that was
+/// promoted to real-time priority must have exited.
+///
+/// # Arguments
+///
+/// * `atp_handle` - An opaque struct returned from a successful call to
+/// `atp_promote_current_thread_to_real_time`.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero in case of error.
+#[no_mangle]
+pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
+    if handle.is_null() {
+        return 1;
+    }
+    let _handle = unsafe { Box::from_raw(handle) };
+    0
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(feature = "terminal-logging")]
     use simple_logger;
-
-    #[test]
+#[test]
     fn it_works() {
-        #[cfg(feature = "terminal-logging")]
+#[cfg(feature = "terminal-logging")]
         simple_logger::init().unwrap();
         {
             assert!(promote_current_thread_to_real_time(0, 0).is_err());
@@ -406,21 +411,27 @@ mod tests {
             let _rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
             // automatically deallocated, but not demoted until the thread exits.
         }
-        {
-            let info = get_current_thread_info().unwrap();
-            let _rt_prio_handle = promote_thread_to_real_time(info, 512, 44100).unwrap();
-        }
-        {
-            let info = get_current_thread_info().unwrap();
-            let bytes = info.serialize();
-            let info2 = RtPriorityThreadInfo::deserialize(bytes);
-            assert!(info == info2);
-        }
-        {
-            let info = get_current_thread_info().unwrap();
-            let bytes = thread_info_serialize(info);
-            let info2 = thread_info_deserialize(bytes);
-            assert!(info == info2);
+    }
+    cfg_if! {
+        if #[cfg(target_os = "linux")] {
+            fn test_linux_api() {
+                {
+                    let info = get_current_thread_info().unwrap();
+                    let _rt_prio_handle = promote_thread_to_real_time(info, 512, 44100).unwrap();
+                }
+                {
+                    let info = get_current_thread_info().unwrap();
+                    let bytes = info.serialize();
+                    let info2 = RtPriorityThreadInfo::deserialize(bytes);
+                    assert!(info == info2);
+                }
+                {
+                    let info = get_current_thread_info().unwrap();
+                    let bytes = thread_info_serialize(info);
+                    let info2 = thread_info_deserialize(bytes);
+                    assert!(info == info2);
+                }
+            }
         }
     }
 }
