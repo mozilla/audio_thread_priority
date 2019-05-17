@@ -115,10 +115,10 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
 
     let mut rt_priority_handle = RtPriorityHandleInternal::new();
 
-    let buffer_frames = if buffer_frames > 0 {
+    let buffer_frames = if audio_buffer_frames > 0 {
         audio_buffer_frames
     } else {
-        buffer_frames = audio_samplerate_hz / 20
+        audio_samplerate_hz / 20
     };
 
     unsafe {
