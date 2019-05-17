@@ -87,7 +87,7 @@ fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<
 }
 
 fn make_realtime(tid: kernel_pid_t, max_slice_us: u64, prio: u32) -> Result<u32, Box<std::error::Error>> {
-    let c = try!(Connection::get_private(BusType::System));
+    let c = Connection::get_private(BusType::System)?;
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
         "org.freedesktop.RealtimeKit1", DBUS_SOCKET_TIMEOUT);

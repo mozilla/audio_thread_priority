@@ -400,15 +400,32 @@ mod tests {
             assert!(promote_current_thread_to_real_time(0, 0).is_err());
         }
         {
-            let rt_prio_handle = promote_current_thread_to_real_time(0, 44100).unwrap();
-            demote_current_thread_from_real_time(rt_prio_handle).unwrap();
+            match promote_current_thread_to_real_time(0, 44100) {
+                Ok(rt_prio_handle) => {
+                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
+                }
+                Err(e) => {
+                    panic!(e);
+                }
+            }
         }
         {
-            let rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
-            demote_current_thread_from_real_time(rt_prio_handle).unwrap();
+            match promote_current_thread_to_real_time(512, 44100) {
+                Ok(rt_prio_handle) => {
+                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
+                }
+                Err(e) => {
+                    panic!(e);
+                }
+            }
         }
         {
-            let _rt_prio_handle = promote_current_thread_to_real_time(512, 44100).unwrap();
+            match promote_current_thread_to_real_time(512, 44100) {
+                Ok(_) => { }
+                Err(e) => {
+                    panic!(e);
+                }
+            }
             // automatically deallocated, but not demoted until the thread exits.
         }
     }
@@ -418,7 +435,13 @@ mod tests {
             fn test_linux_api() {
                 {
                     let info = get_current_thread_info().unwrap();
-                    let _rt_prio_handle = promote_thread_to_real_time(info, 512, 44100).unwrap();
+                    match promote_thread_to_real_time(info, 512, 44100) {
+                        Ok(_) => {
+                        }
+                        Err(e) => {
+                            panic!(e);
+                        }
+                    }
                 }
                 {
                     let info = get_current_thread_info().unwrap();
