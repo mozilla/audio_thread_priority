@@ -24,7 +24,6 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = [ "avrt", "errhandlingapi", "ntdef", "minwindef"] }
-kernel32-sys = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

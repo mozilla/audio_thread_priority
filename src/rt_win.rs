@@ -5,7 +5,7 @@
 use winapi::um::avrt::*;
 use winapi::shared::ntdef::HANDLE;
 use winapi::shared::minwindef::DWORD;
-use kernel32::GetLastError;
+use winapi::um::errhandlingapi::GetLastError;
 
 #[derive(Debug)]
 pub struct RtPriorityHandleInternal {
