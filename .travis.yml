@@ -1,7 +1,8 @@
 language: rust
-apt:
-  packages:
-    - libdbus-1-dev
+addons:
+  apt:
+    packages:
+      - libdbus-1-dev
 os:
   - linux
   - osx
