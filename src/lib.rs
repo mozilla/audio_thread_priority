@@ -414,6 +414,7 @@ mod tests {
     }
     cfg_if! {
         if #[cfg(target_os = "linux")] {
+            #[test]
             fn test_linux_api() {
                 {
                     let info = get_current_thread_info().unwrap();
