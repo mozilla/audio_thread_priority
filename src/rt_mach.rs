@@ -26,18 +26,6 @@ extern "C" {
 }
 
 // can't use size_of in const fn just now in stable, use a macro for now.
-macro_rules! THREAD_EXTENDED_POLICY_COUNT {
-    () => {
-        (size_of::<thread_extended_policy_data_t>() / size_of::<integer_t>()) as u32;
-    }
-}
-
-macro_rules! THREAD_PRECEDENCE_POLICY_COUNT {
-    () => {
-        (size_of::<thread_precedence_policy_data_t>() / size_of::<integer_t>()) as u32;
-    }
-}
-
 macro_rules! THREAD_TIME_CONSTRAINT_POLICY_COUNT {
     () => {
         (size_of::<thread_time_constraint_policy_data_t>() / size_of::<integer_t>()) as u32;
@@ -47,8 +35,6 @@ macro_rules! THREAD_TIME_CONSTRAINT_POLICY_COUNT {
 #[derive(Debug)]
 pub struct RtPriorityHandleInternal {
     tid: mach_port_t,
-    previous_time_share: thread_extended_policy_data_t,
-    previous_precedence_policy: thread_precedence_policy_data_t,
     previous_time_constraint_policy: thread_time_constraint_policy_data_t,
 }
 
@@ -56,8 +42,6 @@ impl RtPriorityHandleInternal {
     pub fn new() -> RtPriorityHandleInternal {
         return RtPriorityHandleInternal {
             tid: 0,
-            previous_time_share: thread_extended_policy_data_t { timeshare: 0 },
-            previous_precedence_policy: thread_precedence_policy_data_t { importance: 0},
             previous_time_constraint_policy: thread_time_constraint_policy_data_t {
                 period: 0,
                 computation: 0,
@@ -71,28 +55,8 @@ impl RtPriorityHandleInternal {
 pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
                                             -> Result<(), ()> {
     unsafe {
-        let mut rv: kern_return_t;
+        let rv: kern_return_t;
         let mut h = rt_priority_handle;
-        rv = thread_policy_set(h.tid,
-                               THREAD_EXTENDED_POLICY,
-                               (&mut h.previous_time_share) as *mut _ as thread_policy_t,
-                               THREAD_EXTENDED_POLICY_COUNT!());
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread demotion error: thread_policy_set: extended");
-            return Err(());
-        }
-
-        rv = thread_policy_set(h.tid,
-                               THREAD_PRECEDENCE_POLICY,
-                               (&mut h.previous_precedence_policy) as *mut _ as thread_policy_t,
-                               THREAD_PRECEDENCE_POLICY_COUNT!());
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread demotion error: thread_policy_set: precedence");
-            return Err(());
-        }
-
         rv = thread_policy_set(h.tid,
                                THREAD_TIME_CONSTRAINT_POLICY,
                                (&mut h.previous_time_constraint_policy) as *mut _ as
@@ -124,8 +88,6 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
     unsafe {
         let tid: mach_port_t = pthread_mach_thread_np(pthread_self());
         let mut rv: kern_return_t;
-        let mut policy = thread_extended_policy_data_t { timeshare: 0 };
-        let mut precedence = thread_precedence_policy_data_t { importance: 0 };
         let mut time_constraints = thread_time_constraint_policy_data_t {
             period: 0,
             computation: 0,
@@ -142,36 +104,6 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
         // returning, it means there are no current settings because of other factor, and the
         // default was returned instead.
         let mut get_default: boolean_t = 0;
-        count = THREAD_EXTENDED_POLICY_COUNT!();
-        rv = thread_policy_get(tid,
-                               THREAD_EXTENDED_POLICY,
-                               (&mut policy) as *mut _ as thread_policy_t,
-                               &mut count,
-                               &mut get_default);
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread promotion error: thread_policy_get: extended");
-            return Err(());
-        }
-
-        rt_priority_handle.previous_time_share = policy;
-
-        get_default = 0;
-        count = THREAD_PRECEDENCE_POLICY_COUNT!();
-        rv = thread_policy_get(tid,
-                               THREAD_PRECEDENCE_POLICY,
-                               (&mut precedence) as *mut _ as thread_policy_t,
-                               &mut count,
-                               &mut get_default);
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread promotion error: thread_policy_get: precedence");
-            return Err(());
-        }
-
-        rt_priority_handle.previous_precedence_policy = precedence;
-
-        get_default = 0;
         count = THREAD_TIME_CONSTRAINT_POLICY_COUNT!();
         rv = thread_policy_get(tid,
                                THREAD_TIME_CONSTRAINT_POLICY,
@@ -186,33 +118,8 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
 
         rt_priority_handle.previous_time_constraint_policy = time_constraints;
 
-        // Now, that we have all the previous values to be able to restore,
-        // set the thread to real-time.
-        rv = thread_policy_set(tid,
-                               THREAD_EXTENDED_POLICY,
-                               (&mut policy) as *mut _ as thread_policy_t,
-                               THREAD_EXTENDED_POLICY_COUNT!());
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread promotion error: thread_policy_set: extended");
-            return Err(());
-        }
-
-        let mut precedence = thread_precedence_policy_data_t { importance: 63 };
-        rv = thread_policy_set(tid,
-                               THREAD_PRECEDENCE_POLICY,
-                               (&mut precedence) as *mut _ as thread_policy_t,
-                               THREAD_PRECEDENCE_POLICY_COUNT!());
-
-        if rv != KERN_SUCCESS as i32 {
-            error!("thread promotion error: thread_policy_set: precedence");
-            return Err(());
-        }
-
         let cb_duration = buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
         // The multiplicators are somwhat arbitrary for now.
-        let computation = 0.6 * cb_duration;
-        let constraint = 0.85 * cb_duration;
 
         let mut timebase_info = mach_timebase_info_data_t { denom: 0, numer: 0 };
         mach_timebase_info(&mut timebase_info);
@@ -221,9 +128,9 @@ pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
 
         time_constraints = thread_time_constraint_policy_data_t {
             period: (cb_duration * ms2abs) as u32,
-            computation: (computation * ms2abs) as u32,
-            constraint: (constraint * ms2abs) as u32,
-            preemptible: 0,
+            computation: (0.3 * ms2abs) as u32, // fixed 300us computation time
+            constraint: (cb_duration * ms2abs) as u32,
+            preemptible: 1, // true
         };
 
         rv = thread_policy_set(tid,
