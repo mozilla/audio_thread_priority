@@ -10,16 +10,6 @@
  * to real-time priority.
  */
 struct atp_handle;
-/**
- * An opaque structure representing informations about a thread, to be able to
- * promote it to real-time priority from another thread or process.
- *
- * This call is useful on Linux desktop only, when the process is sandboxed and
- * cannot promote itself directly.
- */
-struct atp_thread_info;
-
-const size_t ATP_THREAD_INFO_SIZE = 24;
 
 #ifdef __cplusplus
 extern "C" {
