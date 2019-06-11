@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef AUDIO_THREAD_PRIORITY_H
+#define AUDIO_THREAD_PRIORITY_H
+
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -49,3 +52,5 @@ int32_t atp_free_handle(atp_handle *handle);
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
+
+#endif // AUDIO_THREAD_PRIORITY_H
