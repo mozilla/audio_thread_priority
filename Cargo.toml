@@ -19,7 +19,7 @@ simple_logger = { version =  "0.4", optional = true }
 terminal-logging = ["simple_logger"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-mach = "0.1"
+mach = "0.3"
 libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
