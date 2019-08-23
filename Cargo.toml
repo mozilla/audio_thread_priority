@@ -5,6 +5,7 @@ authors = ["Paul Adenot <paul@paul.cx>"]
 description = "Bump a thread to real-time priority, for audio work, on Linux, Windows and macOS"
 license = "MPL-2.0"
 repository = "https://github.com/padenot/audio_thread_priority"
+edition = "2018"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
