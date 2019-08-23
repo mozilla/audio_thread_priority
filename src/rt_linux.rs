@@ -8,6 +8,7 @@ extern crate dbus;
 extern crate libc;
 
 use std::cmp;
+use std::error::Error;
 
 use dbus::{Connection, BusType, Props, MessageItem, Message};
 
@@ -27,7 +28,7 @@ pub struct RtPriorityHandleInternal {
     param: libc::sched_param,
 }
 
-fn item_as_i64(i: MessageItem) -> Result<i64, Box<std::error::Error>> {
+fn item_as_i64(i: MessageItem) -> Result<i64, Box<dyn Error>> {
     match i {
         MessageItem::Int32(i) => Ok(i as i64),
         MessageItem::Int64(i) => Ok(i),
@@ -35,7 +36,7 @@ fn item_as_i64(i: MessageItem) -> Result<i64, Box<std::error::Error>> {
     }
 }
 
-fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<std::error::Error>> {
+fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<dyn Error>> {
     let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
                                          "/org/freedesktop/RealtimeKit1",
                                          "org.freedesktop.RealtimeKit1",
@@ -45,7 +46,7 @@ fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<
     return Ok(());
 }
 
-fn make_realtime(tid: kernel_pid_t, requested_slice_us: u64, prio: u32) -> Result<u32, Box<std::error::Error>> {
+fn make_realtime(tid: kernel_pid_t, requested_slice_us: u64, prio: u32) -> Result<u32, Box<dyn Error>> {
     let c = Connection::get_private(BusType::System)?;
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
