@@ -21,6 +21,8 @@ type kernel_pid_t = libc::c_long;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RtPriorityThreadInfoInternal {
+    /// The PID of the process containing `thread_id` below.
+    pid: libc::pid_t,
     /// System-wise thread id, use to promote the thread via dbus.
     thread_id: kernel_pid_t,
     /// Process-local thread id, used to restore scheduler characteristics. This information is not
@@ -64,17 +66,27 @@ fn item_as_i64(i: MessageItem) -> Result<i64, Box<dyn Error>> {
     }
 }
 
-fn rtkit_set_realtime(c: &Connection, thread: u64, prio: u32) -> Result<(), Box<dyn Error>> {
-    let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
-                                         "/org/freedesktop/RealtimeKit1",
-                                         "org.freedesktop.RealtimeKit1",
-                                         "MakeThreadRealtime")?;
-    m.append_items(&[thread.into(), prio.into()]);
+fn rtkit_set_realtime(c: &Connection, thread: u64, pid: u64, prio: u32) -> Result<(), Box<dyn Error>> {
+    let m = if unsafe { libc::getpid() as u64 } == pid {
+        let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
+                                             "/org/freedesktop/RealtimeKit1",
+                                             "org.freedesktop.RealtimeKit1",
+                                             "MakeThreadRealtime")?;
+        m.append_items(&[thread.into(), prio.into()]);
+        m
+    } else {
+        let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
+                                             "/org/freedesktop/RealtimeKit1",
+                                             "org.freedesktop.RealtimeKit1",
+                                             "MakeThreadRealtimeWithPID")?;
+        m.append_items(&[pid.into(), thread.into(), prio.into()]);
+        m
+    };
     c.send_with_reply_and_block(m, DBUS_SOCKET_TIMEOUT)?;
     return Ok(());
 }
 
-fn make_realtime(tid: kernel_pid_t, requested_slice_us: u64, prio: u32) -> Result<u32, Box<dyn Error>> {
+fn make_realtime(tid: kernel_pid_t, pid: libc::pid_t, requested_slice_us: u64, prio: u32) -> Result<u32, Box<dyn Error>> {
     let c = Connection::get_private(BusType::System)?;
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
@@ -109,7 +121,7 @@ fn make_realtime(tid: kernel_pid_t, requested_slice_us: u64, prio: u32) -> Resul
     }
 
     // Finally, let's ask rtkit to make us realtime
-    let r = rtkit_set_realtime(&c, tid as u64, prio);
+    let r = rtkit_set_realtime(&c, tid as u64, pid as u64, prio);
 
     if r.is_err() {
         unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &old_limit) };
@@ -164,7 +176,11 @@ pub fn get_current_thread_info_internal() -> Result<RtPriorityThreadInfoInternal
         error!("pthread_getschedparam error {}", pthread_id);
         return Err(());
     }
+
+    let pid = unsafe { libc::getpid() };
+
     Ok(RtPriorityThreadInfoInternal {
+        pid,
         thread_id,
         pthread_id,
         policy,
@@ -177,7 +193,7 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
                                             audio_buffer_frames: u32,
                                             audio_samplerate_hz: u32) -> Result<RtPriorityHandleInternal, ()>
 {
-    let RtPriorityThreadInfoInternal { thread_id, .. } = thread_info;
+    let RtPriorityThreadInfoInternal { pid, thread_id, .. } = thread_info;
 
     let buffer_frames = if audio_buffer_frames > 0 {
         audio_buffer_frames
@@ -187,7 +203,7 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
     };
     let budget_us = (buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
     let handle = RtPriorityHandleInternal { thread_info };
-    let r = make_realtime(thread_id, budget_us, RT_PRIO_DEFAULT);
+    let r = make_realtime(thread_id, pid, budget_us, RT_PRIO_DEFAULT);
     if r.is_err() {
         warn!("Could not make thread real-time.");
         return Err(());
