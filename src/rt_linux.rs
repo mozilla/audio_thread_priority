@@ -9,7 +9,6 @@ extern crate libc;
 
 use std::cmp;
 use std::error::Error;
-use std::convert::TryInto;
 
 use dbus::{Connection, BusType, Props, MessageItem, Message};
 
