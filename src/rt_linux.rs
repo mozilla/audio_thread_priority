@@ -207,16 +207,3 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
     }
     return Ok(handle);
 }
-
-pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
-                                            -> Result<(), ()> {
-    assert!(unsafe { libc::pthread_self() } == rt_priority_handle.pthread_id);
-
-    if unsafe { libc::pthread_setschedparam(rt_priority_handle.pthread_id,
-                                            rt_priority_handle.policy,
-                                            &rt_priority_handle.param) } < 0 {
-        warn!("could not demote thread {}", rt_priority_handle.pthread_id);
-        return Err(());
-    }
-    return Ok(());
-}

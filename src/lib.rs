@@ -164,6 +164,11 @@ pub extern "C" fn atp_serialize_thread_info(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn atp_thread_info_size() -> usize {
+    RtPriorityThreadInfo::size()
+}
+
 /// From a byte buffer, return a `RtPriorityThreadInfo`, with a C API.
 ///
 /// This call is useful on Linux desktop only, when the process is sandboxed and

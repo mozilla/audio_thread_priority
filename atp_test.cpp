@@ -14,7 +14,7 @@ int main() {
 
   info2 = atp_deserialize_thread_info(buffer);
 
-  int rv = memcmp(info, info2, 24);
+  int rv = memcmp(info, info2, ATP_THREAD_INFO_SIZE);
 
   assert(!rv);
 

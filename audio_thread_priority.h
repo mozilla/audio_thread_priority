@@ -13,6 +13,8 @@
  * to real-time priority.
  */
 struct atp_handle;
+struct atp_thread_info;
+const size_t ATP_THREAD_INFO_SIZE = 24;
 
 #ifdef __cplusplus
 extern "C" {
