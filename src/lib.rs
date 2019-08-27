@@ -179,7 +179,7 @@ pub extern "C" fn atp_serialize_thread_info(
 pub extern "C" fn atp_deserialize_thread_info(
     in_bytes: *mut libc::uint8_t,
 ) -> *mut atp_thread_info {
-    let bytes = unsafe { *(in_bytes as *mut [u8; 24]) };
+    let bytes = unsafe { *(in_bytes as *mut [u8; std::mem::size_of::<RtPriorityThreadInfoInternal>()]) };
     let thread_info = RtPriorityThreadInfoInternal::deserialize(bytes);
     return Box::into_raw(Box::new(atp_thread_info(thread_info)));
 }

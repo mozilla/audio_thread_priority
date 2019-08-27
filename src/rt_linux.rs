@@ -37,23 +37,11 @@ pub struct RtPriorityThreadInfoInternal {
 impl RtPriorityThreadInfoInternal {
     /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
-        let mut bytes = [0; std::mem::size_of::<Self>()];
-
-        bytes[..8].copy_from_slice(&self.thread_id.to_ne_bytes());
-        bytes[8..16].copy_from_slice(&self.pthread_id.to_ne_bytes());
-        bytes[16..20].copy_from_slice(&self.policy.to_ne_bytes());
-        bytes[20..].copy_from_slice(&self.param.sched_priority.to_ne_bytes());
-
-        bytes
+        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
     }
     /// Get an RtPriorityThreadInfoInternal from a byte buffer.
     pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
-        Self {
-            thread_id: kernel_pid_t::from_ne_bytes(bytes[..8].try_into().unwrap()),
-            pthread_id: libc::pthread_t::from_ne_bytes(bytes[8..16].try_into().unwrap()),
-            policy: libc::c_int::from_ne_bytes(bytes[16..20].try_into().unwrap()),
-            param: libc::sched_param { sched_priority: libc::c_int::from_ne_bytes(bytes[20..].try_into().unwrap()) },
-        }
+        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
     }
 }
 
