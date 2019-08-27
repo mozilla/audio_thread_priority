@@ -9,6 +9,7 @@ extern crate simple_logger;
 #[macro_use]
 extern crate log;
 
+
 cfg_if! {
     if #[cfg(target_os = "macos")] {
         mod rt_mach;
@@ -36,6 +37,8 @@ cfg_if! {
         use rt_linux::demote_thread_from_real_time_internal;
         use rt_linux::RtPriorityThreadInfoInternal;
         use rt_linux::RtPriorityHandleInternal;
+        #[no_mangle]
+        pub static ATP_THREAD_INFO_SIZE: usize = std::mem::size_of::<RtPriorityThreadInfo>();
     } else {
         pub struct RtPriorityHandleInternal {}
         pub fn promote_current_thread_to_real_time_internal(_: u32, audio_samplerate_hz: u32) -> Result<RtPriorityHandle, ()> {
@@ -162,11 +165,6 @@ pub extern "C" fn atp_serialize_thread_info(
     unsafe {
         std::ptr::copy(source.as_ptr(), bytes as *mut u8, source.len());
     }
-}
-
-#[no_mangle]
-pub extern "C" fn atp_thread_info_size() -> usize {
-    RtPriorityThreadInfo::size()
 }
 
 /// From a byte buffer, return a `RtPriorityThreadInfo`, with a C API.

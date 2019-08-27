@@ -14,7 +14,7 @@
  */
 struct atp_handle;
 struct atp_thread_info;
-const size_t ATP_THREAD_INFO_SIZE = 24;
+extern size_t ATP_THREAD_INFO_SIZE;
 
 #ifdef __cplusplus
 extern "C" {
