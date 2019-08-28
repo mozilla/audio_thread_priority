@@ -21,5 +21,8 @@ int main() {
   atp_free_thread_info(info);
   atp_free_thread_info(info2);
 
+  rv = atp_set_real_time_limit(0, 44100);
+  assert(!rv);
+
   return 0;
 }

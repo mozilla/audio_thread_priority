@@ -113,6 +113,16 @@ void atp_serialize_thread_info(atp_thread_info *thread_info, uint8_t *bytes);
  * */
 atp_thread_info* atp_deserialize_thread_info(uint8_t *bytes);
 
+/**
+ * Set real-time limit for the calling process.
+ *
+ * This is useful only on Linux desktop, and allows remoting the rtkit DBUS call
+ * to a process that has access to DBUS. This function has to be called before
+ * attempting to promote threads from another process.
+ */
+int32_t atp_set_real_time_limit(uint32_t audio_buffer_frames,
+                                uint32_t audio_samplerate_hz);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus

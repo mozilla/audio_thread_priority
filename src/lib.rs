@@ -402,6 +402,16 @@ pub extern "C" fn atp_free_handle(handle: *mut atp_handle) -> i32 {
     0
 }
 
+#[no_mangle]
+pub extern "C" fn atp_set_real_time_limit(audio_buffer_frames: u32,
+                                          audio_samplerate_hz: u32) -> i32 {
+    let r = set_real_time_hard_limit(audio_buffer_frames, audio_samplerate_hz);
+    if r.is_err() {
+        return 1;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
