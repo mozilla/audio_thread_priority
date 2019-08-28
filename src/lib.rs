@@ -177,7 +177,7 @@ pub extern "C" fn atp_serialize_thread_info(
 /// A byte buffer containing a serializezd `RtPriorityThreadInfo`.
 #[no_mangle]
 pub extern "C" fn atp_deserialize_thread_info(
-    in_bytes: *mut libc::uint8_t,
+    in_bytes: *mut u8,
 ) -> *mut atp_thread_info {
     let bytes = unsafe { *(in_bytes as *mut [u8; std::mem::size_of::<RtPriorityThreadInfoInternal>()]) };
     let thread_info = RtPriorityThreadInfoInternal::deserialize(bytes);
