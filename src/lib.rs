@@ -30,6 +30,7 @@ cfg_if! {
         mod rt_linux;
         extern crate dbus;
         extern crate libc;
+        use rt_linux::set_real_time_hard_limit_internal as set_real_time_hard_limit;
         use rt_linux::promote_current_thread_to_real_time_internal;
         use rt_linux::demote_current_thread_from_real_time_internal;
         use rt_linux::get_current_thread_info_internal;
@@ -445,6 +446,9 @@ mod tests {
     }
     cfg_if! {
         if #[cfg(target_os = "linux")] {
+            use nix::unistd::*;
+            use nix::sys::signal::*;
+
             #[test]
             fn test_linux_api() {
                 {
@@ -468,6 +472,56 @@ mod tests {
                     let bytes = thread_info_serialize(info);
                     let info2 = thread_info_deserialize(bytes);
                     assert!(info == info2);
+                }
+            }
+            #[test]
+            fn test_remote_promotion() {
+                let (rd, wr) = pipe().unwrap();
+
+                match fork().expect("fork failed") {
+                    ForkResult::Parent{ child } => {
+                        eprintln!("Parent PID: {}", getpid());
+                        let mut bytes = [0 as u8; std::mem::size_of::<RtPriorityThreadInfo>()];
+                        match read(rd, &mut bytes) {
+                            Ok(_) => {
+                                let info = RtPriorityThreadInfo::deserialize(bytes);
+                                match promote_thread_to_real_time(info, 0, 44100) {
+                                    Ok(_) => {
+                                        eprintln!("thread promotion in the child from the parent succeeded");
+                                        assert!(true);
+                                    }
+                                    Err(_) => {
+                                        eprintln!("promotion Err");
+                                        assert!(false);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("could not read from the pipe: {}", e);
+                            }
+                        }
+                        kill(child, SIGKILL).expect("Could not kill the child?");
+                    }
+                    ForkResult::Child => {
+                        let r = set_real_time_hard_limit(0, 44100);
+                        if r.is_err() {
+                            eprintln!("Could not set RT limit, the test will fail.");
+                        }
+                        eprintln!("Child pid: {}", getpid());
+                        let info = get_current_thread_info().unwrap();
+                        let bytes = info.serialize();
+                        match write(wr, &bytes) {
+                            Ok(_) => {
+                                loop {
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    eprintln!("child sleeping, waiting to be promoted...");
+                                }
+                            }
+                            Err(_) => {
+                                eprintln!("write error on the pipe.");
+                            }
+                        }
+                    }
                 }
             }
         }

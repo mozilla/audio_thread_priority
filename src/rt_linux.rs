@@ -66,7 +66,7 @@ fn item_as_i64(i: MessageItem) -> Result<i64, Box<dyn Error>> {
     }
 }
 
-fn rtkit_set_realtime(c: &Connection, thread: u64, pid: u64, prio: u32) -> Result<(), Box<dyn Error>> {
+fn rtkit_set_realtime(thread: u64, pid: u64, prio: u32) -> Result<(), Box<dyn Error>> {
     let m = if unsafe { libc::getpid() as u64 } == pid {
         let mut m = Message::new_method_call("org.freedesktop.RealtimeKit1",
                                              "/org/freedesktop/RealtimeKit1",
@@ -82,53 +82,50 @@ fn rtkit_set_realtime(c: &Connection, thread: u64, pid: u64, prio: u32) -> Resul
         m.append_items(&[pid.into(), thread.into(), prio.into()]);
         m
     };
+    let c = Connection::get_private(BusType::System)?;
     c.send_with_reply_and_block(m, DBUS_SOCKET_TIMEOUT)?;
     return Ok(());
 }
 
-fn make_realtime(tid: kernel_pid_t, pid: libc::pid_t, requested_slice_us: u64, prio: u32) -> Result<u32, Box<dyn Error>> {
+/// Returns the maximum priority, maximum real-time time slice, and the current real-time time
+/// slice for this process.
+fn get_limits() -> Result<(i64, u64, libc::rlimit64), Box<dyn Error>> {
     let c = Connection::get_private(BusType::System)?;
 
     let p = Props::new(&c, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
-        "org.freedesktop.RealtimeKit1", DBUS_SOCKET_TIMEOUT);
+                       "org.freedesktop.RealtimeKit1", DBUS_SOCKET_TIMEOUT);
+    let mut current_limit = libc::rlimit64 {
+        rlim_cur: 0,
+        rlim_max: 0
+    };
 
-    // Make sure we don't fail by wanting too much
     let max_prio = item_as_i64(p.get("MaxRealtimePriority")?)?;
     if max_prio < 0 {
         return Err(Box::from("invalid negative MaxRealtimePriority"));
     }
-    let prio = cmp::min(prio, max_prio as u32);
 
-    // Enforce RLIMIT_RTPRIO, also a must before asking rtkit for rtprio
     let max_rttime = item_as_i64(p.get("RTTimeUSecMax")?)?;
     if max_rttime < 0 {
         return Err(Box::from("invalid negative RTTimeUSecMax"));
     }
 
-    // Only take what we need, or cap at the system limit, no further.
-    let rttime_request = cmp::min(requested_slice_us, max_rttime as u64);
-
-    // Set a soft limit to the limit requested, to be able to handle going over the limit using
-    // SIXCPU. Set the hard limit to the maxium slice to prevent getting SIGKILL.
-    let new_limit = libc::rlimit64 { rlim_cur: rttime_request,
-                                     rlim_max: max_rttime as u64 };
-    let mut old_limit = new_limit;
-    if unsafe { libc::getrlimit64(libc::RLIMIT_RTTIME, &mut old_limit) } < 0 {
+    if unsafe { libc::getrlimit64(libc::RLIMIT_RTTIME, &mut current_limit) } < 0 {
         return Err(Box::from("getrlimit failed"));
     }
+
+    Ok((max_prio, (max_rttime as u64), current_limit))
+}
+
+fn set_limits(request: u64, max: u64) -> Result<(), Box<dyn Error>> {
+    // Set a soft limit to the limit requested, to be able to handle going over the limit using
+    // SIGXCPU. Set the hard limit to the maxium slice to prevent getting SIGKILL.
+    let new_limit = libc::rlimit64 { rlim_cur: request,
+        rlim_max: max };
     if unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &new_limit) } < 0 {
         return Err(Box::from("setrlimit failed"));
     }
 
-    // Finally, let's ask rtkit to make us realtime
-    let r = rtkit_set_realtime(&c, tid as u64, pid as u64, prio);
-
-    if r.is_err() {
-        unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &old_limit) };
-        return Err(Box::from("could not set process as real-time."));
-    }
-
-    Ok(prio)
+    Ok(())
 }
 
 pub fn promote_current_thread_to_real_time_internal(audio_buffer_frames: u32,
@@ -188,13 +185,12 @@ pub fn get_current_thread_info_internal() -> Result<RtPriorityThreadInfoInternal
     })
 }
 
-/// Promote a thread (possibly in another process) identified by its tid, to real-time.
-pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInternal,
-                                            audio_buffer_frames: u32,
-                                            audio_samplerate_hz: u32) -> Result<RtPriorityHandleInternal, ()>
-{
-    let RtPriorityThreadInfoInternal { pid, thread_id, .. } = thread_info;
-
+/// This set the RLIMIT_RTTIME resource to something other than "unlimited". It's necessary for the
+/// rtkit request to succeed, and needs to hapen in the child. We can't get the real limit here,
+/// because we don't have access to DBUS, so it is hardcoded to 200ms, which is the default in the
+/// rtkit package.
+pub fn set_real_time_hard_limit_internal(audio_buffer_frames: u32,
+                                         audio_samplerate_hz: u32) -> Result<(), ()> {
     let buffer_frames = if audio_buffer_frames > 0 {
         audio_buffer_frames
     } else {
@@ -202,11 +198,37 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
         audio_samplerate_hz / 20
     };
     let budget_us = (buffer_frames * 1_000_000 / audio_samplerate_hz) as u64;
+
+    // It's only necessary to set RLIMIT_RTTIME to something when in the child, skip it if it's a
+    // remoting call.
+    let (_, max_rttime, _) = get_limits().map_err(|_| {})?;
+
+    // Only take what we need, or cap at the system limit, no further.
+    let rttime_request = cmp::min(budget_us, max_rttime as u64);
+    set_limits(rttime_request, max_rttime).map_err(|_| {})?;
+
+    Ok(())
+}
+
+/// Promote a thread (possibly in another process) identified by its tid, to real-time.
+pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInternal,
+                                            audio_buffer_frames: u32,
+                                            audio_samplerate_hz: u32) -> Result<RtPriorityHandleInternal, ()>
+{
+    let RtPriorityThreadInfoInternal { pid, thread_id, .. } = thread_info;
+
     let handle = RtPriorityHandleInternal { thread_info };
-    let r = make_realtime(thread_id, pid, budget_us, RT_PRIO_DEFAULT);
+
+    let (_, _, limits) = get_limits().map_err(|_| {})?;
+    set_real_time_hard_limit_internal(audio_buffer_frames, audio_samplerate_hz)?;
+
+    let r = rtkit_set_realtime(thread_id as u64, pid as u64, RT_PRIO_DEFAULT);
+
     if r.is_err() {
-        warn!("Could not make thread real-time.");
-        return Err(());
+        if unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &limits) } < 0 {
+            return Err(());
+        }
     }
+
     return Ok(handle);
 }

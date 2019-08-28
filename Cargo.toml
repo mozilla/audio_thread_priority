@@ -16,6 +16,9 @@ cfg-if = "0.1"
 log = "0.4"
 simple_logger = { version =  "0.4", optional = true }
 
+[dev-dependencies]
+nix = "0.15.0"
+
 [features]
 terminal-logging = ["simple_logger"]
 
