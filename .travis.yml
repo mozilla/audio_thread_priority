@@ -8,6 +8,8 @@ os:
   - linux
   - osx
   - windows
+script:
+  - cargo build --verbose
 rust:
   - stable
   - beta
