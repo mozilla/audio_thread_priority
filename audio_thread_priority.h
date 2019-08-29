@@ -33,8 +33,46 @@ extern "C" {
 atp_handle *atp_promote_current_thread_to_real_time(uint32_t audio_buffer_frames,
                                                     uint32_t audio_samplerate_hz);
 
+
 /**
- * Promotes a thread to real-time priority.
+ * Demotes the current thread promoted to real-time priority via
+ * `atp_demote_current_thread_from_real_time` to its previous priority.
+ *
+ * Returns 0 in case of success, non-zero otherwise.
+ */
+int32_t atp_demote_current_thread_from_real_time(atp_handle *handle);
+
+/**
+ * Frees an atp_handle. This is useful when it impractical to call
+ *`atp_demote_current_thread_from_real_time` on the right thread. Access to the
+ * handle must be synchronized externaly (or the related thread must have
+ * exited).
+ *
+ * Returns 0 in case of success, non-zero otherwise.
+ */
+int32_t atp_free_handle(atp_handle *handle);
+
+/*
+ * Linux-only API.
+ *
+ * The Linux backend uses DBUS to promote a thread to real-time priority. In
+ * environment where this is not possible (due to sandboxing), this set of
+ * functions allow remoting the call to a process that can make DBUS calls.
+ *
+ * To do so:
+ * - Set the real-time limit from within the process where a
+ *   thread will be promoted. This is a `setrlimit` call, that can be done
+ *   before the sandbox lockdown.
+ * - Then, gather information on the thread that will be promoted.
+ * - Serialize this info.
+ * - Send over the serialized data via an IPC mechanism
+ * - Deserialize the inf
+ * - Call `atp_promote_thread_to_real_time`
+ */
+
+#ifdef __linux__
+/**
+ * Promotes a thread, possibly in another process, to real-time priority.
  *
  * thread_info: info on the thread to promote, gathered with
  * `atp_get_current_thread_info()`, called on the thread itself.
@@ -48,17 +86,7 @@ atp_handle *atp_promote_current_thread_to_real_time(uint32_t audio_buffer_frames
  * This call is useful on Linux desktop only, when the process is sandboxed and
  * cannot promote itself directly.
  */
-atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info,
-                                            uint32_t audio_buffer_frames,
-                                            uint32_t audio_samplerate_hz);
-
-/**
- * Demotes the current thread promoted to real-time priority via
- * `atp_demote_current_thread_from_real_time` to its previous priority.
- *
- * Returns 0 in case of success, non-zero otherwise.
- */
-int32_t atp_demote_current_thread_from_real_time(atp_handle *handle);
+atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info);
 
 /**
  * Demotes a thread promoted to real-time priority via
@@ -72,18 +100,8 @@ int32_t atp_demote_current_thread_from_real_time(atp_handle *handle);
 int32_t atp_demote_thread_from_real_time(atp_handle *handle);
 
 /**
- * Frees an atp_handle. This is useful when it impractical to call
- *`atp_demote_current_thread_from_real_time` on the right thread. Access to the
- * handle must be synchronized externaly (or the related thread must have
- * exited).
- *
- * Returns 0 in case of success, non-zero otherwise.
- */
-int32_t atp_free_handle(atp_handle *handle);
-
-/**
  * Gather informations from the calling thread, to be able to promote it from
- * another thread or process.
+ * another thread and/or process.
  *
  * Returns a non-null pointer to an `atp_thread_info` structure in case of
  * sucess, to be freed later with `atp_free_thread_info`, and NULL otherwise.
@@ -119,9 +137,14 @@ atp_thread_info* atp_deserialize_thread_info(uint8_t *bytes);
  * This is useful only on Linux desktop, and allows remoting the rtkit DBUS call
  * to a process that has access to DBUS. This function has to be called before
  * attempting to promote threads from another process.
+ *
+ * This sets the real-time computation limit. For actually promoting the thread
+ * to a real-time scheduling class, see `atp_promote_thread_to_real_time`.
  */
 int32_t atp_set_real_time_limit(uint32_t audio_buffer_frames,
                                 uint32_t audio_samplerate_hz);
+
+#endif // __linux__
 
 #ifdef __cplusplus
 } // extern "C"
