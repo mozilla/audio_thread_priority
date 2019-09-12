@@ -220,19 +220,16 @@ pub fn promote_thread_to_real_time(
 
 /// Demotes a thread from real-time priority.
 ///
-/// This call is useful on Linux desktop only, when the process is sandboxed and
-/// cannot promote itself directly.
-///
 /// # Arguments
 ///
-/// * `handle` - An opaque struct returned from a successful call to
-/// `promote_thread_to_real_time`.
+/// * `thread_info` - An opaque struct returned from a successful call to
+/// `get_current_thread_info`.
 ///
 /// # Return value
 ///
-/// `Ok` in scase of success, `Err` otherwise.
-pub fn demote_thread_from_real_time(handle: RtPriorityHandle) -> Result<(), ()> {
-    return demote_thread_from_real_time_internal(handle);
+/// `Ok` in case of success, `Err` otherwise.
+pub fn demote_thread_from_real_time(thread_info: RtPriorityThreadInfo) -> Result<(), ()> {
+    return demote_thread_from_real_time_internal(thread_info);
 }
 
 /// Opaque info to a particular thread.
@@ -380,11 +377,13 @@ pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_hand
 ///
 /// 0 in case of success, non-zero otherwise.
 #[no_mangle]
-pub extern "C" fn atp_demote_thread_from_real_time(handle: *mut atp_handle) -> i32 {
-    assert!(!handle.is_null());
-    let handle = unsafe { Box::from_raw(handle) };
+pub extern "C" fn atp_demote_thread_from_real_time(thread_info: *mut atp_thread_info) -> i32 {
+    if thread_info.is_null() {
+        return 1;
+    }
+    let thread_info = unsafe { (*thread_info).0 };
 
-    match demote_current_thread_from_real_time(handle.0) {
+    match demote_thread_from_real_time(thread_info) {
         Ok(_) => 0,
         _ => 1,
     }

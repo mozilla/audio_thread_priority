@@ -149,12 +149,17 @@ pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPrior
 }
 
 /// This can be called by sandboxed code, it only restores priority to what they were.
-pub fn demote_thread_from_real_time_internal(rt_priority_handle: RtPriorityHandleInternal)
+pub fn demote_thread_from_real_time_internal(thread_info: RtPriorityThreadInfoInternal)
                                             -> Result<(), ()> {
-    if unsafe { libc::pthread_setschedparam(rt_priority_handle.thread_info.pthread_id,
-                                            rt_priority_handle.thread_info.policy,
-                                            &rt_priority_handle.thread_info.param) } < 0 {
-        error!("could not demote thread {}", rt_priority_handle.thread_info.pthread_id);
+    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+
+    // https://github.com/rust-lang/libc/issues/1511
+    const SCHED_RESET_ON_FORK: libc::c_int = 0x40000000;
+
+    if unsafe { libc::pthread_setschedparam(thread_info.pthread_id,
+                                            libc::SCHED_OTHER|SCHED_RESET_ON_FORK,
+                                            &param) } < 0 {
+        error!("could not demote thread {}", thread_info.pthread_id);
         return Err(());
     }
     return Ok(());

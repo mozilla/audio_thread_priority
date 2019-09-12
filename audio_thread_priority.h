@@ -97,7 +97,7 @@ atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info);
  * This call is useful on Linux desktop only, when the process is sandboxed and
  * cannot promote itself directly.
  */
-int32_t atp_demote_thread_from_real_time(atp_handle *handle);
+int32_t atp_demote_thread_from_real_time(atp_thread_info* thread_info);
 
 /**
  * Gather informations from the calling thread, to be able to promote it from
