@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#[warn(missing_docs)]
+
 #[macro_use]
 extern crate cfg_if;
 #[cfg(feature = "terminal-logging")]
@@ -39,6 +41,7 @@ cfg_if! {
         use rt_linux::RtPriorityThreadInfoInternal;
         use rt_linux::RtPriorityHandleInternal;
         #[no_mangle]
+        /// Size of a RtPriorityThreadInfo or atp_thread_info struct, for use in FFI.
         pub static ATP_THREAD_INFO_SIZE: usize = std::mem::size_of::<RtPriorityThreadInfo>();
     } else {
         // blanket implementations for Android and other systems.
@@ -265,6 +268,17 @@ pub extern "C" fn atp_promote_thread_to_real_time(
     }
 }
 
+/// Set a real-time limit for the calling thread.
+///
+/// # Arguments
+///
+/// `audio_buffer_frames` - the number of frames the audio callback has to render each quantum. 0
+/// picks a rather high default value.
+/// `audio_samplerate_hz` - the sample-rate of the audio stream.
+///
+/// # Return value
+///
+/// 0 in case of success, 1 otherwise.
 #[no_mangle]
 pub extern "C" fn atp_set_real_time_limit(audio_buffer_frames: u32,
                                           audio_samplerate_hz: u32) -> i32 {
