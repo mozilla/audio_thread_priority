@@ -268,6 +268,28 @@ pub extern "C" fn atp_promote_thread_to_real_time(
     }
 }
 
+/// Demote a thread promoted to from real-time, with a C API.
+///
+/// # Arguments
+///
+/// `handle` -  an opaque struct received from a promoting function.
+///
+/// # Return value
+///
+/// 0 in case of success, non-zero otherwise.
+#[no_mangle]
+pub extern "C" fn atp_demote_thread_from_real_time(thread_info: *mut atp_thread_info) -> i32 {
+    if thread_info.is_null() {
+        return 1;
+    }
+    let thread_info = unsafe { (*thread_info).0 };
+
+    match demote_thread_from_real_time(thread_info) {
+        Ok(_) => 0,
+        _ => 1,
+    }
+}
+
 /// Set a real-time limit for the calling thread.
 ///
 /// # Arguments
@@ -376,28 +398,6 @@ pub extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut atp_hand
     let handle = unsafe { Box::from_raw(handle) };
 
     match demote_current_thread_from_real_time(handle.0) {
-        Ok(_) => 0,
-        _ => 1,
-    }
-}
-
-/// Demote a thread promoted to from real-time, with a C API.
-///
-/// # Arguments
-///
-/// `handle` -  an opaque struct received from a promoting function.
-///
-/// # Return value
-///
-/// 0 in case of success, non-zero otherwise.
-#[no_mangle]
-pub extern "C" fn atp_demote_thread_from_real_time(thread_info: *mut atp_thread_info) -> i32 {
-    if thread_info.is_null() {
-        return 1;
-    }
-    let thread_info = unsafe { (*thread_info).0 };
-
-    match demote_thread_from_real_time(thread_info) {
         Ok(_) => 0,
         _ => 1,
     }
