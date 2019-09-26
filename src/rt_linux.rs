@@ -9,6 +9,7 @@ extern crate libc;
 
 use std::cmp;
 use std::error::Error;
+use std::io::Error as OSError;
 
 use dbus::{Connection, BusType, Props, MessageItem, Message};
 
@@ -110,6 +111,7 @@ fn get_limits() -> Result<(i64, u64, libc::rlimit64), Box<dyn Error>> {
     }
 
     if unsafe { libc::getrlimit64(libc::RLIMIT_RTTIME, &mut current_limit) } < 0 {
+        error!("getrlimit64: {}", OSError::last_os_error().raw_os_error().unwrap());
         return Err(Box::from("getrlimit failed"));
     }
 
@@ -142,7 +144,7 @@ pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPrior
     if unsafe { libc::pthread_setschedparam(rt_priority_handle.thread_info.pthread_id,
                                             rt_priority_handle.thread_info.policy,
                                             &rt_priority_handle.thread_info.param) } < 0 {
-        error!("could not demote thread {}", rt_priority_handle.thread_info.pthread_id);
+        error!("could not demote thread {}", OSError::last_os_error().raw_os_error().unwrap());
         return Err(());
     }
     return Ok(());
@@ -159,7 +161,7 @@ pub fn demote_thread_from_real_time_internal(thread_info: RtPriorityThreadInfoIn
     if unsafe { libc::pthread_setschedparam(thread_info.pthread_id,
                                             libc::SCHED_OTHER|SCHED_RESET_ON_FORK,
                                             &param) } < 0 {
-        error!("could not demote thread {}", thread_info.pthread_id);
+        error!("could not demote thread {}", OSError::last_os_error().raw_os_error().unwrap());
         return Err(());
     }
     return Ok(());
@@ -175,7 +177,7 @@ pub fn get_current_thread_info_internal() -> Result<RtPriorityThreadInfoInternal
     let mut policy = 0;
 
     if unsafe { libc::pthread_getschedparam(pthread_id, &mut policy, &mut param) } < 0 {
-        error!("pthread_getschedparam error {}", pthread_id);
+        error!("pthread_getschedparam error {}", OSError::last_os_error().raw_os_error().unwrap());
         return Err(());
     }
 
@@ -231,6 +233,7 @@ pub fn promote_thread_to_real_time_internal(thread_info: RtPriorityThreadInfoInt
 
     if r.is_err() {
         if unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &limits) } < 0 {
+            error!("setrlimit64: {}", OSError::last_os_error().raw_os_error().unwrap());
             return Err(());
         }
     }
