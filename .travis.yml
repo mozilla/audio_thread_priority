@@ -4,10 +4,15 @@ env:
   - RUST_BACKTRACE=1
 before_install:
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then sudo apt-get update && sudo apt-get install -y libdbus-1-dev pulseaudio rtkit ; fi
-os:
-  - linux
-  - osx
-  - windows
+matrix:
+  include:
+    - os: linux
+      env: TARGET=i686-unknown-linux-musl PKG_CONFIG_ALLOW_CROSS=1
+    - os: windows
+    - os: osx
+    - allow_failures:
+      - rust: nightly
+        fast_finish: true
 script:
   - cargo build --verbose
 rust:
@@ -15,7 +20,3 @@ rust:
   - beta
   - nightly
 cache: cargo
-matrix:
-  allow_failures:
-    - rust: nightly
-  fast_finish: true
