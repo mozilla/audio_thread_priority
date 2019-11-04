@@ -45,9 +45,7 @@ pub struct RtPriorityThreadInfoInternal {
     /// process.
     pthread_id: libc::pthread_t,
     /// ...
-    policy: libc::c_int,
-    /// ...
-    param: libc::sched_param,
+    policy: libc::c_int
 }
 
 impl RtPriorityThreadInfoInternal {
@@ -154,9 +152,11 @@ pub fn demote_current_thread_from_real_time_internal(rt_priority_handle: RtPrior
                                             -> Result<(), AudioThreadPriorityError> {
     assert!(unsafe { libc::pthread_self() } == rt_priority_handle.thread_info.pthread_id);
 
+    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+
     if unsafe { libc::pthread_setschedparam(rt_priority_handle.thread_info.pthread_id,
                                             rt_priority_handle.thread_info.policy,
-                                            &rt_priority_handle.thread_info.param) } < 0 {
+                                            &param) } < 0 {
         return Err(AudioThreadPriorityError::new_with_inner(&"could not demote thread", Box::new(OSError::last_os_error())));
     }
     return Ok(());
@@ -197,8 +197,7 @@ pub fn get_current_thread_info_internal() -> Result<RtPriorityThreadInfoInternal
         pid,
         thread_id,
         pthread_id,
-        policy,
-        param
+        policy
     })
 }
 
