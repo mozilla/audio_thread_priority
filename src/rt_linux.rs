@@ -36,14 +36,14 @@ impl From<Box<dyn Error>> for AudioThreadPriorityError {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RtPriorityThreadInfoInternal {
-    /// The PID of the process containing `thread_id` below.
-    pid: libc::pid_t,
     /// System-wise thread id, use to promote the thread via dbus.
     thread_id: kernel_pid_t,
     /// Process-local thread id, used to restore scheduler characteristics. This information is not
     /// useful in another process, but is useful tied to the `thread_id`, when back into the first
     /// process.
     pthread_id: libc::pthread_t,
+    /// The PID of the process containing `thread_id` below.
+    pid: libc::pid_t,
     /// ...
     policy: libc::c_int
 }
