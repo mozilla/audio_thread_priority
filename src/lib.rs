@@ -84,7 +84,7 @@ cfg_if! {
         pub struct RtPriorityHandleInternal {}
         pub fn promote_current_thread_to_real_time_internal(_: u32, audio_samplerate_hz: u32) -> Result<RtPriorityHandle, AudioThreadPriorityError> {
             if audio_samplerate_hz == 0 {
-                return Err(AudioThreadPriorityError("sample rate is zero"));
+                return Err(AudioThreadPriorityError{message: "sample rate is zero".to_string(), inner: None});
             }
             // no-op
             Ok(RtPriorityHandle{})
