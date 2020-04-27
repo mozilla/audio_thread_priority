@@ -23,7 +23,11 @@ type kernel_pid_t = libc::c_long;
 
 impl From<dbus::Error> for AudioThreadPriorityError {
     fn from(error: dbus::Error) -> Self {
-        AudioThreadPriorityError::new(&format!("{}:{}", error.name().unwrap(), error.message().unwrap()))
+        AudioThreadPriorityError::new(&format!(
+            "{}:{}",
+            error.name().unwrap_or("?"),
+            error.message().unwrap_or("?")
+        ))
     }
 }
 
