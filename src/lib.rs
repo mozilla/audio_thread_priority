@@ -134,7 +134,7 @@ cfg_if! {
         }
         #[no_mangle]
         /// Size of a RtPriorityThreadInfo or atp_thread_info struct, for use in FFI.
-        pub static ATP_THREAD_INFO_SIZE: usize = 0;
+        pub static ATP_THREAD_INFO_SIZE: usize = std::mem::size_of::<RtPriorityThreadInfo>();
     }
 }
 
