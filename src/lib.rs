@@ -86,7 +86,8 @@ cfg_if! {
     } else {
         // blanket implementations for Android, Linux Desktop without dbus and others
         pub struct RtPriorityHandleInternal {}
-        pub struct RtPriorityThreadInfo {
+        #[derive(Clone, Copy)]
+        pub struct RtPriorityThreadInfoInternal {
             _dummy: u8
         }
         impl RtPriorityThreadInfo {
@@ -114,10 +115,10 @@ cfg_if! {
         ) -> Result<(), AudioThreadPriorityError> {
             Ok(())
         }
-        pub fn get_current_thread_info() -> Result<RtPriorityThreadInfo, AudioThreadPriorityError> {
+        pub fn get_current_thread_info_internal() -> Result<RtPriorityThreadInfo, AudioThreadPriorityError> {
             Ok(RtPriorityThreadInfo{_dummy: 0})
         }
-        pub fn promote_thread_to_real_time(
+        pub fn promote_thread_to_real_time_internal(
             _: RtPriorityThreadInfo,
             _: u32,
             audio_samplerate_hz: u32,
@@ -128,7 +129,7 @@ cfg_if! {
             return Ok(RtPriorityHandle{});
         }
 
-        pub fn demote_thread_from_real_time(_: RtPriorityThreadInfo) -> Result<(), AudioThreadPriorityError> {
+        pub fn demote_thread_from_real_time_internal(_: RtPriorityThreadInfo) -> Result<(), AudioThreadPriorityError> {
             return Ok(());
         }
         #[no_mangle]
@@ -141,7 +142,7 @@ cfg_if! {
 pub type RtPriorityHandle = RtPriorityHandleInternal;
 
 cfg_if! {
-    if #[cfg(all(target_os = "linux", feature = "with_dbus"))] {
+    if #[cfg(target_os = "linux")] {
 /// Opaque handle to a thread info.
 ///
 /// This can be serialized to raw bytes to be sent via IPC.
