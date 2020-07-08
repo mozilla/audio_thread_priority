@@ -86,7 +86,17 @@ cfg_if! {
     } else {
         // blanket implementations for Android, Linux Desktop without dbus and others
         pub struct RtPriorityHandleInternal {}
-        pub struct RtPriorityThreadInfo {}
+        pub struct RtPriorityThreadInfo {
+            _dummy: u8
+        }
+        impl RtPriorityThreadInfo {
+            pub fn serialize(&self) -> [u8; 1] {
+                [0]
+            }
+            pub fn deserialize(_: [u8; 1]) -> Self {
+                RtPriorityThreadInfo{_dummy: 0}
+            }
+        }
         pub fn promote_current_thread_to_real_time_internal(_: u32, audio_samplerate_hz: u32) -> Result<RtPriorityHandle, AudioThreadPriorityError> {
             if audio_samplerate_hz == 0 {
                 return Err(AudioThreadPriorityError{message: "sample rate is zero".to_string(), inner: None});
@@ -105,9 +115,9 @@ cfg_if! {
             Ok(())
         }
         pub fn get_current_thread_info() -> Result<RtPriorityThreadInfo, AudioThreadPriorityError> {
-            Ok(RtPriorityThreadInfo{})
+            Ok(RtPriorityThreadInfo{_dummy: 0})
         }
-        pub fn promote_thread_to_real_time_internal(
+        pub fn promote_thread_to_real_time(
             _: RtPriorityThreadInfo,
             _: u32,
             audio_samplerate_hz: u32,
