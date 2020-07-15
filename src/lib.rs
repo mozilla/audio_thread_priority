@@ -90,6 +90,13 @@ cfg_if! {
         pub struct RtPriorityThreadInfoInternal {
             _dummy: u8
         }
+
+        cfg_if! {
+            if #[cfg(not(target_os = "linux"))] {
+                pub type RtPriorityThreadInfo = RtPriorityThreadInfoInternal;
+            }
+        }
+
         impl RtPriorityThreadInfo {
             pub fn serialize(&self) -> [u8; 1] {
                 [0]
