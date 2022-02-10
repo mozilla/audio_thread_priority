@@ -135,9 +135,10 @@ pub fn promote_current_thread_to_real_time_internal(
 
         let ms2abs: f32 = ((timebase_info.denom as f32) / timebase_info.numer as f32) * 1000000.;
 
+        // Computation time is half of constraint, per macOS 12 behaviour.
         time_constraints = thread_time_constraint_policy_data_t {
             period: (cb_duration * ms2abs) as u32,
-            computation: (0.3 * ms2abs) as u32, // fixed 300us computation time
+            computation: (cb_duration / 2.0 * ms2abs) as u32,
             constraint: (cb_duration * ms2abs) as u32,
             preemptible: 1, // true
         };
