@@ -85,7 +85,7 @@ cfg_if! {
     } else {
         // blanket implementations for Android, Linux Desktop without dbus and others
         pub struct RtPriorityHandleInternal {}
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, PartialEq)]
         pub struct RtPriorityThreadInfoInternal {
             _dummy: u8
         }
@@ -531,7 +531,7 @@ mod tests {
                     assert!(true);
                 }
                 Err(e) => {
-                    eprintln!("{}", e.description());
+                    eprintln!("{}", e);
                     assert!(false);
                 }
             }
@@ -543,7 +543,7 @@ mod tests {
                     assert!(true);
                 }
                 Err(e) => {
-                    eprintln!("{}", e.description());
+                    eprintln!("{}", e);
                     assert!(false);
                 }
             }
@@ -554,7 +554,7 @@ mod tests {
                     assert!(true);
                 }
                 Err(e) => {
-                    eprintln!("{}", e.description());
+                    eprintln!("{}", e);
                     assert!(false);
                 }
             }
