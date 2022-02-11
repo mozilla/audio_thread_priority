@@ -1,5 +1,9 @@
 # audio_thread_priority
 
+[![](https://img.shields.io/crates/v/audio_thread_priority.svg)](https://crates.io/crates/audio_thread_priority)
+[![](https://docs.rs/audio_thread_priority/badge.svg)](https://docs.rs/audio_thread_priority)
+
+
 Synopsis:
 
 ```rust
