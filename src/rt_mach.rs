@@ -33,7 +33,7 @@ extern "C" {
 // can't use size_of in const fn just now in stable, use a macro for now.
 macro_rules! THREAD_TIME_CONSTRAINT_POLICY_COUNT {
     () => {
-        (size_of::<thread_time_constraint_policy_data_t>() / size_of::<integer_t>()) as u32;
+        (size_of::<thread_time_constraint_policy_data_t>() / size_of::<integer_t>()) as u32
     };
 }
 
