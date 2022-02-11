@@ -63,7 +63,6 @@ cfg_if! {
         use rt_mach::demote_current_thread_from_real_time_internal;
         use rt_mach::RtPriorityHandleInternal;
     } else if #[cfg(target_os = "windows")] {
-        extern crate winapi;
         mod rt_win;
         use rt_win::promote_current_thread_to_real_time_internal;
         use rt_win::demote_current_thread_from_real_time_internal;
