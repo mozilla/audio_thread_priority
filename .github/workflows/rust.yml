@@ -1,22 +1,42 @@
-name: Rust
+name: Build
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-
-env:
-  CARGO_TERM_COLOR: always
+on: [push, pull_request]
 
 jobs:
   build:
-
-    runs-on: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        experimental: [false]
+        include:
+          - rust: nightly
+            experimental: true
 
     steps:
     - uses: actions/checkout@v2
+
+    - name: Install Rust
+      run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt clippy
+
+    - name: Install Dependencies (Linux)
+      run: sudo apt-get update && sudo apt-get install libpulse-dev pulseaudio
+      if: matrix.os == 'ubuntu-latest'
+      
+    - name: Check format
+      shell: bash
+      run: rustup run ${{ matrix.rust }} cargo fmt --all -- --check
+
+    - name: Clippy
+      shell: bash
+      run: rustup run ${{ matrix.rust }} cargo clippy --all -- -D warnings
+
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      shell: bash
+      run: rustup run ${{ matrix.rust }} cargo build --all
+
+    - name: Test
+      shell: bash
+      run: rustup run ${{ matrix.rust }} cargo test --all
