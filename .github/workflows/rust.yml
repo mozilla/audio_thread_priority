@@ -18,16 +18,16 @@ jobs:
       run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt clippy
 
     - name: Install Dependencies (Linux)
-      run: sudo apt-get update && sudo apt-get install libpulse-dev pulseaudio
+      run: sudo apt-get update && sudo apt-get install libpulse-dev pulseaudio libdbus-1-dev
       if: matrix.os == 'ubuntu-20.04'
-      
+
     - name: Check format
       shell: bash
-      run: rustup run ${{ matrix.rust }} cargo fmt --all -- --check
+      run: rustup run ${{ matrix.rust }} cargo fmt -- --check
 
     - name: Clippy
       shell: bash
-      run: rustup run ${{ matrix.rust }} cargo clippy --all -- -D warnings
+      run: rustup run ${{ matrix.rust }} cargo clippy -- -D warnings
 
     - name: Build
       shell: bash
