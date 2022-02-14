@@ -39,9 +39,15 @@ pub struct RtPriorityHandleInternal {
     previous_time_constraint_policy: thread_time_constraint_policy_data_t,
 }
 
+impl Default for RtPriorityHandleInternal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RtPriorityHandleInternal {
     pub fn new() -> RtPriorityHandleInternal {
-        return RtPriorityHandleInternal {
+        RtPriorityHandleInternal {
             tid: 0,
             previous_time_constraint_policy: thread_time_constraint_policy_data_t {
                 period: 0,
@@ -49,7 +55,7 @@ impl RtPriorityHandleInternal {
                 constraint: 0,
                 preemptible: 0,
             },
-        };
+        }
     }
 }
 
@@ -74,7 +80,7 @@ pub fn demote_current_thread_from_real_time_internal(
         info!("thread {} priority restored.", h.tid);
     }
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn promote_current_thread_to_real_time_internal(
