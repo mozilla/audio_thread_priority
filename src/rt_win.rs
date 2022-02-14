@@ -13,10 +13,10 @@ pub struct RtPriorityHandleInternal {
 
 impl RtPriorityHandleInternal {
     pub fn new(mmcss_task_index: u32, task_handle: Foundation::HANDLE) -> RtPriorityHandleInternal {
-        return RtPriorityHandleInternal {
+        RtPriorityHandleInternal {
             mmcss_task_index,
             task_handle,
-        };
+        }
     }
 }
 
@@ -36,7 +36,7 @@ pub fn demote_current_thread_from_real_time_internal(
         rt_priority_handle.mmcss_task_index
     );
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn promote_current_thread_to_real_time_internal(
