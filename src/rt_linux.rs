@@ -294,9 +294,7 @@ pub fn promote_thread_to_real_time_internal(
     let r = rtkit_set_realtime(thread_id as u64, pid as u64, RT_PRIO_DEFAULT);
 
     match r {
-        Ok(_) => {
-            Ok(handle)
-        }
+        Ok(_) => Ok(handle),
         Err(e) => {
             if unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &limits) } < 0 {
                 return Err(AudioThreadPriorityError::new_with_inner(
