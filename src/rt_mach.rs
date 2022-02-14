@@ -63,9 +63,8 @@ pub fn demote_current_thread_from_real_time_internal(
     rt_priority_handle: RtPriorityHandleInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     unsafe {
-        let rv: kern_return_t;
         let mut h = rt_priority_handle;
-        rv = thread_policy_set(
+        let rv: kern_return_t = thread_policy_set(
             h.tid,
             THREAD_TIME_CONSTRAINT_POLICY,
             (&mut h.previous_time_constraint_policy) as *mut _ as thread_policy_t,
@@ -97,14 +96,12 @@ pub fn promote_current_thread_to_real_time_internal(
 
     unsafe {
         let tid: mach_port_t = pthread_mach_thread_np(pthread_self());
-        let mut rv: kern_return_t;
         let mut time_constraints = thread_time_constraint_policy_data_t {
             period: 0,
             computation: 0,
             constraint: 0,
             preemptible: 0,
         };
-        let mut count: mach_msg_type_number_t;
 
         // Get current thread attributes, to revert back to the correct setting later if needed.
         rt_priority_handle.tid = tid;
@@ -113,8 +110,8 @@ pub fn promote_current_thread_to_real_time_internal(
         // returning, it means there are no current settings because of other factor, and the
         // default was returned instead.
         let mut get_default: boolean_t = 0;
-        count = THREAD_TIME_CONSTRAINT_POLICY_COUNT!();
-        rv = thread_policy_get(
+        let mut count: mach_msg_type_number_t = THREAD_TIME_CONSTRAINT_POLICY_COUNT!();
+        let mut rv: kern_return_t = thread_policy_get(
             tid,
             THREAD_TIME_CONSTRAINT_POLICY,
             (&mut time_constraints) as *mut _ as thread_policy_t,
