@@ -22,7 +22,7 @@ nix = "0.15.0"
 [features]
 terminal-logging = ["simple_logger"]
 with_dbus = ["dbus"]
-default = ["with_dbus"]
+default = ["with_dbus", "windows"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mach = "0.3"
@@ -34,6 +34,16 @@ features = [
     "Win32_Foundation",
     "Win32_System_Threading",
 ]
+optional = true
+
+[target.'cfg(target_os = "windows")'.dependencies.winapi]
+version = "0.3"
+features = [
+    "avrt",
+    "errhandlingapi",
+    "minwindef"
+]
+optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
