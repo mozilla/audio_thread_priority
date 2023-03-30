@@ -263,7 +263,7 @@ pub unsafe extern "C" fn atp_free_thread_info(thread_info: *mut atp_thread_info)
     if thread_info.is_null() {
         return 1;
     }
-    Box::from_raw(thread_info);
+    drop(Box::from_raw(thread_info));
     0
 }
 

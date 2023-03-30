@@ -272,7 +272,7 @@ pub fn set_real_time_hard_limit_internal(
     let (_, max_rttime, _) = get_limits()?;
 
     // Only take what we need, or cap at the system limit, no further.
-    let rttime_request = cmp::min(budget_us, max_rttime as u64);
+    let rttime_request = cmp::min(budget_us, max_rttime);
     set_limits(rttime_request, max_rttime)?;
 
     Ok(())
