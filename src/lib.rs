@@ -636,12 +636,12 @@ mod tests {
             fn test_remote_promotion() {
                 let (rd, wr) = pipe().unwrap();
 
-                match fork().expect("fork failed") {
+                match unsafe { fork().expect("fork failed") } {
                     ForkResult::Parent{ child } => {
                         eprintln!("Parent PID: {}", getpid());
                         let mut bytes = [0_u8; std::mem::size_of::<RtPriorityThreadInfo>()];
                         match read(rd, &mut bytes) {
-                            Ok(_) => {
+                             Ok(_) => {
                                 let info = RtPriorityThreadInfo::deserialize(bytes);
                                 match promote_thread_to_real_time(info, 0, 44100) {
                                     Ok(_) => {
