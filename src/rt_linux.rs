@@ -288,7 +288,6 @@ pub fn promote_thread_to_real_time_internal(
 
     let handle = RtPriorityHandleInternal { thread_info };
 
-    let (_, _, limits) = get_limits()?;
     set_real_time_hard_limit_internal(audio_buffer_frames, audio_samplerate_hz)?;
 
     let r = rtkit_set_realtime(thread_id as u64, pid as u64, RT_PRIO_DEFAULT);
@@ -296,7 +295,8 @@ pub fn promote_thread_to_real_time_internal(
     match r {
         Ok(_) => Ok(handle),
         Err(e) => {
-            if unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &limits) } < 0 {
+            let (_, _, limits) = get_limits()?;
+            if limits.rlim_cur != libc::RLIM_INFINITY && unsafe { libc::setrlimit64(libc::RLIMIT_RTTIME, &limits) } < 0 {
                 return Err(AudioThreadPriorityError::new_with_inner(
                     "setrlimit64",
                     Box::new(OSError::last_os_error()),
