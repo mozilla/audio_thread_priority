@@ -28,8 +28,8 @@ default = ["with_dbus"]
 mach = "0.3"
 libc = "0.2"
 
-[target.'cfg(target_os = "windows")'.dependencies.windows]
-version = "^0.32.0"
+[target.'cfg(target_os = "windows")'.dependencies.windows-sys]
+version = "0.48"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",

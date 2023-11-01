@@ -1,7 +1,8 @@
-use windows::Win32::Foundation::GetLastError;
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Foundation::PSTR;
-use windows::Win32::System::Threading::{
+use windows_sys::s;
+use windows_sys::Win32::Foundation::GetLastError;
+use windows_sys::Win32::Foundation::FALSE;
+use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsA,
 };
 
@@ -28,7 +29,7 @@ pub fn demote_current_thread_from_real_time_internal(
     rt_priority_handle: RtPriorityHandleInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     let rv = unsafe { AvRevertMmThreadCharacteristics(rt_priority_handle.task_handle) };
-    if !rv.as_bool() {
+    if rv == FALSE {
         return Err(AudioThreadPriorityError::new(&format!(
             "Unable to restore the thread priority ({:?})",
             unsafe { GetLastError() }
@@ -49,11 +50,10 @@ pub fn promote_current_thread_to_real_time_internal(
 ) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
     let mut task_index = 0u32;
 
-    let handle =
-        unsafe { AvSetMmThreadCharacteristicsA(PSTR("Audio\0".as_ptr()), &mut task_index) };
+    let handle = unsafe { AvSetMmThreadCharacteristicsA(s!("Audio"), &mut task_index) };
     let handle = RtPriorityHandleInternal::new(task_index, handle);
 
-    if handle.task_handle.is_invalid() {
+    if handle.task_handle == 0 {
         return Err(AudioThreadPriorityError::new(&format!(
             "Unable to restore the thread priority ({:?})",
             unsafe { GetLastError() }
