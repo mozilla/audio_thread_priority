@@ -8,6 +8,7 @@ extern crate dbus;
 extern crate libc;
 
 use std::cmp;
+use std::convert::TryInto;
 use std::error::Error;
 use std::io::Error as OSError;
 
@@ -153,10 +154,15 @@ fn get_limits() -> Result<(i64, u64, libc::rlimit), AudioThreadPriorityError> {
 
 fn set_limits(request: u64, max: u64) -> Result<(), AudioThreadPriorityError> {
     // Set a soft limit to the limit requested, to be able to handle going over the limit using
-    // SIGXCPU. Set the hard limit to the maxium slice to prevent getting SIGKILL.
+    // SIGXCPU. Set the hard limit to the maximum slice to prevent getting SIGKILL.
+    #[allow(clippy::useless_conversion)]
     let new_limit = libc::rlimit {
-        rlim_cur: request,
-        rlim_max: max,
+        rlim_cur: request
+            .try_into()
+            .map_err(|_| AudioThreadPriorityError::new("setrlimit"))?,
+        rlim_max: max
+            .try_into()
+            .map_err(|_| AudioThreadPriorityError::new("setrlimit"))?,
     };
     if unsafe { libc::setrlimit(libc::RLIMIT_RTTIME, &new_limit) } < 0 {
         return Err(AudioThreadPriorityError::new_with_inner(
