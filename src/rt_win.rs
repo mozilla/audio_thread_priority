@@ -3,12 +3,9 @@ use crate::AudioThreadPriorityError;
 use log::info;
 use std::sync::OnceLock;
 use windows_sys::{
-    core::PCWSTR,
     w,
     Win32::Foundation::{HANDLE, WIN32_ERROR},
 };
-
-const MMCSS_TASK_NAME: PCWSTR = w!("Audio");
 
 #[derive(Debug)]
 pub struct RtPriorityHandleInternal {
@@ -40,7 +37,7 @@ pub fn promote_current_thread_to_real_time_internal(
     _audio_samplerate_hz: u32,
 ) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
     avrt()?
-        .set_mm_thread_characteristics(MMCSS_TASK_NAME)
+        .set_mm_thread_characteristics(w!("Audio"))
         .map(|(mmcss_task_index, task_handle)| {
             info!("task {mmcss_task_index} bumped to real time priority.");
             RtPriorityHandleInternal::new(mmcss_task_index, task_handle)
@@ -72,10 +69,8 @@ pub fn demote_current_thread_from_real_time_internal(
 }
 
 mod avrt_lib {
-    use super::{
-        win32_utils::{win32_error_if, OwnedLibrary},
-        MMCSS_TASK_NAME,
-    };
+    use super::win32_utils::{win32_error_if, OwnedLibrary};
+    use std::sync::Once;
     use windows_sys::{
         core::PCWSTR,
         s, w,
@@ -108,39 +103,31 @@ mod avrt_lib {
                     module.get_proc(s!("AvRevertMmThreadCharacteristics"))?,
                 )
             };
-            Ok(Self::new(
+            Ok(Self {
                 module,
                 av_set_mm_thread_characteristics_w,
                 av_revert_mm_thread_characteristics,
-            ))
-        }
-
-        fn new(
-            module: OwnedLibrary,
-            av_set_mm_thread_characteristics_w: AvSetMmThreadCharacteristicsWFn,
-            av_revert_mm_thread_characteristics: AvRevertMmThreadCharacteristicsFn,
-        ) -> Self {
-            let library = AvRtLibrary {
-                module,
-                av_set_mm_thread_characteristics_w,
-                av_revert_mm_thread_characteristics,
-            };
-
-            // Warmup code to ensure that the MMCSS service will already be active once
-            // we return from this function.
-            //
-            // Note: This warmup code seems necessary to guarantee the thread safety of
-            //       the avrt functions later. Removing this warmup code can result in
-            //       calls to AvSetMmThreadCharacteristicsW failing with an error code of
-            //       ERROR_PATH_NOT_FOUND.
-            if let Ok((_, handle)) = library.set_mm_thread_characteristics(MMCSS_TASK_NAME) {
-                let _ = library.revert_mm_thread_characteristics(handle);
-            }
-
-            library
+            })
         }
 
         pub(super) fn set_mm_thread_characteristics(
+            &self,
+            task_name: PCWSTR,
+        ) -> Result<(u32, HANDLE), WIN32_ERROR> {
+            // Ensure that the first call never runs in parallel with other calls. This
+            // seems necessary to guarantee the success of these other calls. We saw them
+            // fail with an error code of ERROR_PATH_NOT_FOUND in tests, presumably on a
+            // machine where the MMCSS service was initially inactive.
+            static FIRST_CALL: Once = Once::new();
+            let mut first_call_result = None;
+            FIRST_CALL.call_once(|| {
+                first_call_result = Some(self.set_mm_thread_characteristics_internal(task_name))
+            });
+            first_call_result
+                .unwrap_or_else(|| self.set_mm_thread_characteristics_internal(task_name))
+        }
+
+        fn set_mm_thread_characteristics_internal(
             &self,
             task_name: PCWSTR,
         ) -> Result<(u32, HANDLE), WIN32_ERROR> {
@@ -186,7 +173,7 @@ mod win32_utils {
         pub(super) fn try_new(lib_file_name: PCWSTR) -> Result<Self, WIN32_ERROR> {
             let module = unsafe { LoadLibraryW(lib_file_name) };
             win32_error_if(module == 0)?;
-            Ok(OwnedLibrary(module))
+            Ok(Self(module))
         }
 
         fn raw(&self) -> HMODULE {
