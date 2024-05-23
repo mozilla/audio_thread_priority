@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         rust: [stable, nightly]
-        os: [ubuntu-20.04, windows-2019, macos-10.15]
+        os: [ubuntu-20.04, windows-2019, macos-12, macos-14]
         type: [Release, Debug]
 
     steps:
