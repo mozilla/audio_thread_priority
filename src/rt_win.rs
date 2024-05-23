@@ -77,6 +77,7 @@ mod avrt_lib {
         Win32::Foundation::{BOOL, FALSE, HANDLE, WIN32_ERROR},
     };
 
+    type WFn = unsafe extern "system" fn() -> HANDLE;
     type AvSetMmThreadCharacteristicsWFn = unsafe extern "system" fn(PCWSTR, *mut u32) -> HANDLE;
     type AvRevertMmThreadCharacteristicsFn = unsafe extern "system" fn(HANDLE) -> BOOL;
 
@@ -94,12 +95,12 @@ mod avrt_lib {
         pub(super) fn try_new() -> Result<Self, WIN32_ERROR> {
             let module = OwnedLibrary::try_new(w!("avrt.dll"))?;
             let av_set_mm_thread_characteristics_w = unsafe {
-                std::mem::transmute::<_, AvSetMmThreadCharacteristicsWFn>(
+                std::mem::transmute::<WFn, AvSetMmThreadCharacteristicsWFn>(
                     module.get_proc(s!("AvSetMmThreadCharacteristicsW"))?,
                 )
             };
             let av_revert_mm_thread_characteristics = unsafe {
-                std::mem::transmute::<_, AvRevertMmThreadCharacteristicsFn>(
+                std::mem::transmute::<WFn, AvRevertMmThreadCharacteristicsFn>(
                     module.get_proc(s!("AvRevertMmThreadCharacteristics"))?,
                 )
             };
