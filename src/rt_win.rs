@@ -137,7 +137,7 @@ mod avrt_lib {
             let task_handle = unsafe {
                 (self.av_set_mm_thread_characteristics_w)(task_name, &mut mmcss_task_index)
             };
-            win32_error_if(task_handle == 0)?;
+            win32_error_if(task_handle.is_null())?;
             Ok((mmcss_task_index, task_handle))
         }
 
@@ -174,7 +174,7 @@ mod win32_utils {
     impl OwnedLibrary {
         pub(super) fn try_new(lib_file_name: PCWSTR) -> Result<Self, WIN32_ERROR> {
             let module = unsafe { LoadLibraryW(lib_file_name) };
-            win32_error_if(module == 0)?;
+            win32_error_if(module.is_null())?;
             Ok(Self(module))
         }
 
@@ -201,6 +201,9 @@ mod win32_utils {
             }
         }
     }
+
+    unsafe impl Send for OwnedLibrary {}
+    unsafe impl Sync for OwnedLibrary {}
 }
 
 #[cfg(test)]
