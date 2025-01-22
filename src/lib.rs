@@ -454,7 +454,7 @@ pub extern "C" fn atp_set_real_time_limit(audio_buffer_frames: u32,
 /// # Arguments
 ///
 /// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
+///   rendered each callback, or 0 for a sensible default value.
 /// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
 ///
 /// # Return value
@@ -476,7 +476,7 @@ pub fn promote_current_thread_to_real_time(
 /// # Arguments
 ///
 /// * `handle` - An opaque struct returned from a successful call to
-/// `promote_current_thread_to_real_time`.
+///   `promote_current_thread_to_real_time`.
 ///
 /// # Return value
 ///
@@ -496,7 +496,7 @@ pub struct atp_handle(RtPriorityHandle);
 /// # Arguments
 ///
 /// * `audio_buffer_frames` - the exact or an upper limit on the number of frames that have to be
-/// rendered each callback, or 0 for a sensible default value.
+///   rendered each callback, or 0 for a sensible default value.
 /// * `audio_samplerate_hz` - the sample-rate for this audio stream, in Hz.
 ///
 /// # Return value
@@ -524,7 +524,7 @@ pub extern "C" fn atp_promote_current_thread_to_real_time(
 /// # Arguments
 ///
 /// * `atp_handle` - An opaque struct returned from a successful call to
-/// `atp_promote_current_thread_to_real_time`.
+///   `atp_promote_current_thread_to_real_time`.
 ///
 /// # Return value
 ///
@@ -554,7 +554,7 @@ pub unsafe extern "C" fn atp_demote_current_thread_from_real_time(handle: *mut a
 /// # Arguments
 ///
 /// * `atp_handle` - An opaque struct returned from a successful call to
-/// `atp_promote_current_thread_to_real_time`.
+///   `atp_promote_current_thread_to_real_time`.
 ///
 /// # Return value
 ///
