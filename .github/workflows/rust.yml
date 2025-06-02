@@ -8,18 +8,21 @@ jobs:
     strategy:
       matrix:
         rust: [stable, nightly]
-        os: [ubuntu-20.04, windows-2019, macos-10.15]
+        os: [ubuntu-24.04, windows-2025, macos-14]
         type: [Release, Debug]
 
     steps:
     - uses: actions/checkout@v2
 
     - name: Install Rust
-      run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt clippy
+      run: |
+        rustup toolchain install ${{ matrix.rust }} --profile minimal
+        rustup component add rustfmt --toolchain ${{ matrix.rust }}
+        rustup component add clippy --toolchain ${{ matrix.rust }}
 
     - name: Install Dependencies (Linux)
       run: sudo apt-get update && sudo apt-get install libpulse-dev pulseaudio libdbus-1-dev
-      if: matrix.os == 'ubuntu-20.04'
+      if: matrix.os == 'ubuntu-24.04'
 
     - name: Check format
       shell: bash
@@ -36,4 +39,4 @@ jobs:
     - name: Test
       shell: bash
       run: rustup run ${{ matrix.rust }} cargo test --all
-      if: matrix.os != 'ubuntu-20.04' # setrlimit64 error in the CI container
+      if: matrix.os != 'ubuntu-24.04' # setrlimit64 error in the CI container
