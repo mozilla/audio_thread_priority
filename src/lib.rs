@@ -587,24 +587,22 @@ mod tests {
         {
             match promote_current_thread_to_real_time(0, 44100) {
                 Ok(rt_prio_handle) => {
-                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
-                    assert!(true);
+                    let rv = demote_current_thread_from_real_time(rt_prio_handle);
+                    assert!(rv.is_ok());
                 }
                 Err(e) => {
-                    eprintln!("{}", e);
-                    assert!(false);
+                    panic!("{}", e);
                 }
             }
         }
         {
             match promote_current_thread_to_real_time(512, 44100) {
                 Ok(rt_prio_handle) => {
-                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
-                    assert!(true);
+                    let rv = demote_current_thread_from_real_time(rt_prio_handle);
+                    assert!(rv.is_ok());
                 }
                 Err(e) => {
-                    eprintln!("{}", e);
-                    assert!(false);
+                    panic!("{}", e);
                 }
             }
         }
@@ -612,12 +610,11 @@ mod tests {
             // Try larger values to test https://github.com/mozilla/audio_thread_priority/pull/23
             match promote_current_thread_to_real_time(0, 192000) {
                 Ok(rt_prio_handle) => {
-                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
-                    assert!(true);
+                    let rv = demote_current_thread_from_real_time(rt_prio_handle);
+                    assert!(rv.is_ok());
                 }
                 Err(e) => {
-                    eprintln!("{}", e);
-                    assert!(false);
+                    panic!("{}", e);
                 }
             }
         }
@@ -625,23 +622,19 @@ mod tests {
             // Try larger values to test https://github.com/mozilla/audio_thread_priority/pull/23
             match promote_current_thread_to_real_time(8192, 48000) {
                 Ok(rt_prio_handle) => {
-                    demote_current_thread_from_real_time(rt_prio_handle).unwrap();
-                    assert!(true);
+                    let rv = demote_current_thread_from_real_time(rt_prio_handle);
+                    assert!(rv.is_ok());
                 }
                 Err(e) => {
-                    eprintln!("{}", e);
-                    assert!(false);
+                    panic!("{}", e);
                 }
             }
         }
         {
             match promote_current_thread_to_real_time(512, 44100) {
-                Ok(_) => {
-                    assert!(true);
-                }
+                Ok(_) => {}
                 Err(e) => {
-                    eprintln!("{}", e);
-                    assert!(false);
+                    panic!("{}", e);
                 }
             }
             // automatically deallocated, but not demoted until the thread exits.
@@ -666,12 +659,9 @@ mod tests {
                 {
                     let info = get_current_thread_info().unwrap();
                     match promote_thread_to_real_time(info, 512, 44100) {
-                        Ok(_) => {
-                            assert!(true);
-                        }
+                        Ok(_) => { }
                         Err(e) => {
-                            eprintln!("{}", e);
-                            assert!(false);
+                          panic!("{}", e);
                         }
                     }
                 }
@@ -702,12 +692,10 @@ mod tests {
                                 match promote_thread_to_real_time(info, 0, 44100) {
                                     Ok(_) => {
                                         eprintln!("thread promotion in the child from the parent succeeded");
-                                        assert!(true);
                                     }
-                                    Err(_) => {
-                                        eprintln!("promotion Err");
+                                    Err(e) => {
                                         kill(child, SIGKILL).expect("Could not kill the child?");
-                                        assert!(false);
+                                        panic!("{}", e);
                                     }
                                 }
                             }
