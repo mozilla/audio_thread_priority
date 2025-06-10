@@ -89,7 +89,7 @@ cfg_if! {
         mod rt_mach;
 #[allow(unused, non_camel_case_types, non_snake_case, non_upper_case_globals)]
         mod mach_sys;
-        extern crate mach;
+        extern crate mach2;
         extern crate libc;
         use rt_mach::promote_current_thread_to_real_time_internal;
         use rt_mach::demote_current_thread_from_real_time_internal;
