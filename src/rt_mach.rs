@@ -2,10 +2,10 @@ use crate::mach_sys::*;
 use crate::AudioThreadPriorityError;
 use libc::{pthread_self, pthread_t};
 use log::info;
-use mach::kern_return::{kern_return_t, KERN_SUCCESS};
-use mach::mach_time::{mach_timebase_info, mach_timebase_info_data_t};
-use mach::message::mach_msg_type_number_t;
-use mach::port::mach_port_t;
+use mach2::kern_return::{kern_return_t, KERN_SUCCESS};
+use mach2::mach_time::{mach_timebase_info, mach_timebase_info_data_t};
+use mach2::message::mach_msg_type_number_t;
+use mach2::port::mach_port_t;
 use std::mem::size_of;
 
 extern "C" {
