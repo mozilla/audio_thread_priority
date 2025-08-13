@@ -29,7 +29,7 @@ mach2 = "0.4"
 libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
-version = "0.59"
+version = "0.52"
 features = [
     "Win32_Foundation",
     "Win32_System_LibraryLoader",
