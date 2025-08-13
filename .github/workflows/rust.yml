@@ -48,5 +48,5 @@ jobs:
     - name: Test
       shell: bash
       run: rustup run ${{ matrix.rust }} cargo test --all
-      # setrlimit64 error in the CI container, macOS not supported
-      if: matrix.os != 'ubuntu-24.04' && matrix.os != 'macos-14'
+      # setrlimit64 error in the CI container
+      if: matrix.os != 'ubuntu-24.04'

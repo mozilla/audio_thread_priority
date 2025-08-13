@@ -127,18 +127,31 @@ pub fn promote_current_thread_to_real_time_internal(
 
         rt_priority_handle.previous_time_constraint_policy = time_constraints;
 
-        let cb_duration = buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
-        // The multiplicators are somwhat arbitrary for now.
-
         let mut timebase_info = mach_timebase_info_data_t { denom: 0, numer: 0 };
         mach_timebase_info(&mut timebase_info);
 
         let ms2abs: f32 = ((timebase_info.denom as f32) / timebase_info.numer as f32) * 1000000.;
 
-        // Computation time is half of constraint, per macOS 12 behaviour.
+        // The time constraint calculations are somewhat arbitrary for now.
+        let cb_duration = buffer_frames as f32 / (audio_samplerate_hz as f32) * 1000.;
+
+        // Computation time is half of constraint, per macOS 12 behaviour.  And capped at 50ms per macOS limits:
+        // https://github.com/apple-oss-distributions/xnu/blob/e3723e1f17661b24996789d8afc084c0c3303b26/osfmk/kern/thread_policy.c#L408
+        // https://github.com/apple-oss-distributions/xnu/blob/e3723e1f17661b24996789d8afc084c0c3303b26/osfmk/kern/sched_prim.c#L822
+        const MAX_RT_QUANTUM: f32 = 50.0;
+        let computation = cb_duration / 2.0;
+        let computation = if computation > MAX_RT_QUANTUM {
+            info!(
+                "thread computation time capped at {MAX_RT_QUANTUM}ms ({computation}ms requested)."
+            );
+            MAX_RT_QUANTUM
+        } else {
+            computation
+        };
+
         time_constraints = thread_time_constraint_policy_data_t {
             period: (cb_duration * ms2abs) as u32,
-            computation: (cb_duration / 2.0 * ms2abs) as u32,
+            computation: (computation * ms2abs) as u32,
             constraint: (cb_duration * ms2abs) as u32,
             preemptible: 1, // true
         };
