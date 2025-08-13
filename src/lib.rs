@@ -114,6 +114,11 @@ cfg_if! {
         #[no_mangle]
         /// Size of a RtPriorityThreadInfo or atp_thread_info struct, for use in FFI.
         pub static ATP_THREAD_INFO_SIZE: usize = std::mem::size_of::<RtPriorityThreadInfo>();
+    } else if #[cfg(target_os = "android")] {
+        mod rt_android;
+        use rt_android::promote_current_thread_to_real_time_internal;
+        use rt_android::demote_current_thread_from_real_time_internal;
+        use rt_android::RtPriorityHandleInternal;
     } else {
         // blanket implementations for Android, Linux Desktop without dbus and others
         pub struct RtPriorityHandleInternal {}
@@ -480,7 +485,7 @@ pub fn promote_current_thread_to_real_time(
 ///
 /// # Return value
 ///
-/// `Ok` in scase of success, `Err` otherwise.
+/// `Ok` in case of success, `Err` otherwise.
 pub fn demote_current_thread_from_real_time(
     handle: RtPriorityHandle,
 ) -> Result<(), AudioThreadPriorityError> {

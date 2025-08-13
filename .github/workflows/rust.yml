@@ -20,6 +20,10 @@ jobs:
         rustup component add rustfmt --toolchain ${{ matrix.rust }}
         rustup component add clippy --toolchain ${{ matrix.rust }}
 
+    - name: Install Rust (Android target)
+      run: rustup target add x86_64-linux-android --toolchain ${{ matrix.rust }}
+      if: matrix.os == 'ubuntu-24.04'
+
     - name: Install Dependencies (Linux)
       run: sudo apt-get update && sudo apt-get install libpulse-dev pulseaudio libdbus-1-dev
       if: matrix.os == 'ubuntu-24.04'
@@ -35,6 +39,11 @@ jobs:
     - name: Build
       shell: bash
       run: rustup run ${{ matrix.rust }} cargo build --all
+
+    - name: Build (Android)
+      shell: bash
+      run: rustup run ${{ matrix.rust }} cargo build --target x86_64-linux-android --all
+      if: matrix.os == 'ubuntu-24.04'
 
     - name: Test
       shell: bash
