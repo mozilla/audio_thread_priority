@@ -1,37 +1,15 @@
-use crate::mach_sys::*;
 use crate::AudioThreadPriorityError;
-use libc::{pthread_self, pthread_t};
+use libc::{pthread_mach_thread_np, pthread_self, thread_policy_t};
 use log::info;
+use mach2::boolean::boolean_t;
 use mach2::kern_return::{kern_return_t, KERN_SUCCESS};
 use mach2::mach_time::{mach_timebase_info, mach_timebase_info_data_t};
 use mach2::message::mach_msg_type_number_t;
 use mach2::port::mach_port_t;
-use std::mem::size_of;
-
-extern "C" {
-    fn pthread_mach_thread_np(tid: pthread_t) -> mach_port_t;
-    // Those functions are commented out in thread_policy.h but somehow it works just fine !?
-    fn thread_policy_set(
-        thread: thread_t,
-        flavor: thread_policy_flavor_t,
-        policy_info: thread_policy_t,
-        count: mach_msg_type_number_t,
-    ) -> kern_return_t;
-    fn thread_policy_get(
-        thread: thread_t,
-        flavor: thread_policy_flavor_t,
-        policy_info: thread_policy_t,
-        count: &mut mach_msg_type_number_t,
-        get_default: &mut boolean_t,
-    ) -> kern_return_t;
-}
-
-// can't use size_of in const fn just now in stable, use a macro for now.
-macro_rules! THREAD_TIME_CONSTRAINT_POLICY_COUNT {
-    () => {
-        (size_of::<thread_time_constraint_policy_data_t>() / size_of::<integer_t>()) as u32
-    };
-}
+use mach2::thread_policy::{
+    thread_policy_get, thread_policy_set, thread_time_constraint_policy_data_t,
+    THREAD_TIME_CONSTRAINT_POLICY, THREAD_TIME_CONSTRAINT_POLICY_COUNT,
+};
 
 #[derive(Debug)]
 pub struct RtPriorityHandleInternal {
@@ -68,7 +46,7 @@ pub fn demote_current_thread_from_real_time_internal(
             h.tid,
             THREAD_TIME_CONSTRAINT_POLICY,
             (&mut h.previous_time_constraint_policy) as *mut _ as thread_policy_t,
-            THREAD_TIME_CONSTRAINT_POLICY_COUNT!(),
+            THREAD_TIME_CONSTRAINT_POLICY_COUNT,
         );
         if rv != KERN_SUCCESS {
             return Err(AudioThreadPriorityError::new(
@@ -110,7 +88,7 @@ pub fn promote_current_thread_to_real_time_internal(
         // returning, it means there are no current settings because of other factor, and the
         // default was returned instead.
         let mut get_default: boolean_t = 0;
-        let mut count: mach_msg_type_number_t = THREAD_TIME_CONSTRAINT_POLICY_COUNT!();
+        let mut count: mach_msg_type_number_t = THREAD_TIME_CONSTRAINT_POLICY_COUNT;
         let mut rv: kern_return_t = thread_policy_get(
             tid,
             THREAD_TIME_CONSTRAINT_POLICY,
@@ -160,7 +138,7 @@ pub fn promote_current_thread_to_real_time_internal(
             tid,
             THREAD_TIME_CONSTRAINT_POLICY,
             (&mut time_constraints) as *mut _ as thread_policy_t,
-            THREAD_TIME_CONSTRAINT_POLICY_COUNT!(),
+            THREAD_TIME_CONSTRAINT_POLICY_COUNT,
         );
         if rv != KERN_SUCCESS {
             return Err(AudioThreadPriorityError::new(

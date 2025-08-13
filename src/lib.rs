@@ -87,8 +87,6 @@ impl Error for AudioThreadPriorityError {
 cfg_if! {
     if #[cfg(target_os = "macos")] {
         mod rt_mach;
-#[allow(unused, non_camel_case_types, non_snake_case, non_upper_case_globals)]
-        mod mach_sys;
         extern crate mach2;
         extern crate libc;
         use rt_mach::promote_current_thread_to_real_time_internal;
