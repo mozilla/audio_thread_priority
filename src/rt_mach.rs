@@ -155,7 +155,7 @@ pub fn promote_current_thread_to_real_time_internal(
             ));
         }
 
-        info!("thread {} bumped to real time priority.", tid);
+        info!("thread {tid} bumped to real time priority.");
     }
 
     Ok(rt_priority_handle)
