@@ -176,12 +176,12 @@ cfg_if! {
             if audio_samplerate_hz == 0 {
                 return Err(AudioThreadPriorityError::new("sample rate is zero"));
             }
-            return Ok(RtPriorityHandle{});
+            Ok(RtPriorityHandle{})
         }
 
         /// Fallback implementation that performs no operation for unsupported platforms.
         pub fn demote_thread_from_real_time_internal(_: RtPriorityThreadInfo) -> Result<(), AudioThreadPriorityError> {
-            return Ok(());
+            Ok(())
         }
         #[no_mangle]
         /// Size of a RtPriorityThreadInfo or atp_thread_info struct, for use in FFI.

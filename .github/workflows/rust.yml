@@ -73,7 +73,7 @@ jobs:
 
     - name: Clippy
       shell: bash
-      run: rustup run ${{ matrix.rust }} cargo clippy -- -D warnings
+      run: rustup run ${{ matrix.rust }} cargo clippy --no-default-features -- -D warnings
 
     - name: Build fallback (Linux without dbus)
       shell: bash
