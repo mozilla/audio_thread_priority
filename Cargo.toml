@@ -24,7 +24,7 @@ terminal-logging = ["simple_logger"]
 with_dbus = ["dbus"]
 default = ["with_dbus"]
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 mach2 = "0.4"
 libc = "0.2"
 

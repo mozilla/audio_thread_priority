@@ -85,7 +85,7 @@ impl Error for AudioThreadPriorityError {
 }
 
 cfg_if! {
-    if #[cfg(target_os = "macos")] {
+    if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         mod rt_mach;
         extern crate mach2;
         extern crate libc;
