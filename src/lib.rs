@@ -142,6 +142,10 @@ cfg_if! {
             pub fn deserialize(_: [u8; 1]) -> Self {
                 RtPriorityThreadInfo{_dummy: 0}
             }
+            /// Returns the PID of the process containing the thread (fallback: always -1).
+            pub fn pid(&self) -> i32 {
+                -1
+            }
         }
         /// Fallback implementation that performs no operation for unsupported platforms.
         pub fn promote_current_thread_to_real_time_internal(_: u32, audio_samplerate_hz: u32) -> Result<RtPriorityHandle, AudioThreadPriorityError> {
