@@ -80,7 +80,7 @@ impl AudioThreadPriorityError {
 
 impl fmt::Display for AudioThreadPriorityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut rv = write!(f, "AudioThreadPriorityError: {}", &self.message);
+        let mut rv = write!(f, "AudioThreadPriorityError: {}", self.message);
         if let Some(inner) = &self.inner {
             rv = write!(f, " ({inner})");
         }
