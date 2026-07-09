@@ -13,32 +13,39 @@
 extern crate libc;
 
 use std::io::Error as OSError;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::AudioThreadPriorityError;
 
-/// Default real-time priority to request, when `AUDIO_RT_PRIORITY` is unset. Matches the value the
-/// rtkit path already asks for.
+/// Default real-time priority to request, unless overridden with [`set_rt_priority`]. Matches the
+/// value the rtkit path already asks for.
 const RT_PRIO_DEFAULT: libc::c_int = 10;
 
-/// Environment variable to override the requested real-time priority. Accepts an integer 1-99.
-/// Higher values preempt more work but must stay below the audio interface's IRQ threads, or they
-/// starve the very threads that deliver the audio.
-const RT_PRIORITY_ENV: &str = "AUDIO_RT_PRIORITY";
+/// The real-time priority to request, or 0 to use `RT_PRIO_DEFAULT`. Set via [`set_rt_priority`].
+static RT_PRIORITY: AtomicU8 = AtomicU8::new(0);
 
-/// The real-time priority to request, from `AUDIO_RT_PRIORITY` or the default.
+/// Set the real-time priority (1-99) to request when promoting a thread, overriding the default of
+/// 10. Pass `None` to restore the default. Values outside 1-99 are ignored with a warning.
+///
+/// This is entirely optional: if never called, promotion uses priority 10, the value the rtkit path
+/// requests. It is specific to the Linux build without the `dbus` feature; set it before promoting.
+pub fn set_rt_priority(priority: Option<u8>) {
+    match priority {
+        Some(priority) if (1..=99).contains(&priority) => {
+            RT_PRIORITY.store(priority, Ordering::Relaxed)
+        }
+        Some(priority) => {
+            log::warn!("Ignoring invalid real-time priority {priority}, expected an integer 1-99")
+        }
+        None => RT_PRIORITY.store(0, Ordering::Relaxed),
+    }
+}
+
+/// The real-time priority to request: the value set via [`set_rt_priority`], or the default.
 fn requested_priority() -> libc::c_int {
-    match std::env::var(RT_PRIORITY_ENV) {
-        Ok(value) => match value.trim().parse::<libc::c_int>() {
-            Ok(priority) if (1..=99).contains(&priority) => priority,
-            _ => {
-                log::warn!(
-                    "Ignoring invalid {RT_PRIORITY_ENV}=\"{value}\", expected an integer 1-99. \
-                     Using default {RT_PRIO_DEFAULT}."
-                );
-                RT_PRIO_DEFAULT
-            }
-        },
-        Err(_) => RT_PRIO_DEFAULT,
+    match RT_PRIORITY.load(Ordering::Relaxed) {
+        0 => RT_PRIO_DEFAULT,
+        priority => priority as libc::c_int,
     }
 }
 

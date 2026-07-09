@@ -13,8 +13,8 @@
 //! - **Linux** (`dbus` feature disabled): direct promotion with `pthread_setschedparam` and the
 //!   `SCHED_FIFO` policy. This needs no D-Bus daemon, and works whenever the process may request
 //!   real-time scheduling: running as root, holding `CAP_SYS_NICE`, or with an `RLIMIT_RTPRIO`
-//!   limit configured (e.g. systemd `LimitRTPRIO` or `/etc/security/limits.conf`). The priority
-//!   (default 10) can be overridden with the `AUDIO_RT_PRIORITY` environment variable (1-99).
+//!   limit configured (e.g. systemd `LimitRTPRIO` or `/etc/security/limits.conf`). The requested
+//!   priority defaults to 10 and can be changed with `set_rt_priority` (Linux, no-`dbus` only).
 //! - **Other platforms**: a no-op that reports success.
 //!
 //! # Example
@@ -138,6 +138,7 @@ cfg_if! {
         use rt_linux_native::demote_thread_from_real_time_internal;
         use rt_linux_native::RtPriorityThreadInfoInternal;
         use rt_linux_native::RtPriorityHandleInternal;
+        pub use rt_linux_native::set_rt_priority;
         #[no_mangle]
         /// Size of a RtPriorityThreadInfo or atp_thread_info struct, for use in FFI.
         pub static ATP_THREAD_INFO_SIZE: usize = std::mem::size_of::<RtPriorityThreadInfo>();
@@ -913,7 +914,7 @@ mod tests {
                         });
                     }
 
-                    // The requested priority can be overridden with AUDIO_RT_PRIORITY. Uses a value
+                    // The requested priority can be overridden with set_rt_priority. Uses a value
                     // that differs from the default (10) and fits a modest RLIMIT_RTPRIO, and checks
                     // the thread lands on exactly that priority.
                     #[test]
@@ -928,12 +929,12 @@ mod tests {
                                 return SKIPPED;
                             }
                             set_rtprio_soft(hard);
-                            std::env::set_var("AUDIO_RT_PRIORITY", OVERRIDE.to_string());
+                            set_rt_priority(Some(OVERRIDE as u8));
 
                             let handle = match promote_current_thread_to_real_time(0, 44100) {
                                 Ok(handle) => handle,
                                 Err(e) => {
-                                    eprintln!("promotion denied with AUDIO_RT_PRIORITY={OVERRIDE}: {e}");
+                                    eprintln!("promotion denied at priority {OVERRIDE}: {e}");
                                     return FAILED;
                                 }
                             };

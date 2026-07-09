@@ -28,9 +28,6 @@ extern "C" {
  * or an upper bound.
  * audio_samplerate_hz: sample-rate for this audio stream, in Hz
  *
- * On Linux built without D-Bus, the requested priority defaults to 10 and can be
- * overridden with the AUDIO_RT_PRIORITY environment variable (an integer 1-99).
- *
  * Returns an opaque handle in case of success, NULL otherwise.
  */
 atp_handle *atp_promote_current_thread_to_real_time(uint32_t audio_buffer_frames,
