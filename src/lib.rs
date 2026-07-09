@@ -633,7 +633,10 @@ mod tests {
     fn rt_scheduling_available() -> bool {
         match promote_current_thread_to_real_time(0, 44100) {
             Ok(handle) => {
-                let _ = demote_current_thread_from_real_time(handle);
+                // Demotion must succeed after a successful promotion; otherwise the thread would
+                // stay real-time and perturb later tests, so treat a failure as fatal here.
+                demote_current_thread_from_real_time(handle)
+                    .expect("demotion after a successful promotion should succeed");
                 true
             }
             Err(_) => false,
@@ -813,8 +816,8 @@ mod tests {
             }
 
             // Native (no-dbus) path only. These tests change the process-wide RLIMIT_RTPRIO and, for
-            // the override test, an environment variable, so they run in a forked child to avoid
-            // racing with the other (parallel) promotion tests.
+            // the override test, the priority set via `set_rt_priority`, so they run in a forked
+            // child to avoid racing with the other (parallel) promotion tests.
             cfg_if! {
                 if #[cfg(not(feature = "dbus"))] {
                     const SCHED_RESET_ON_FORK: libc::c_int = 0x4000_0000;

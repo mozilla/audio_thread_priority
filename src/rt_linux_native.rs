@@ -57,6 +57,8 @@ const SCHED_RESET_ON_FORK: libc::c_int = 0x4000_0000;
 #[allow(non_camel_case_types)]
 type kernel_pid_t = libc::c_long;
 
+// The fields are laid out to leave no padding (like the rtkit path's equivalent struct), so
+// `serialize` can transmute the whole struct to bytes without reading uninitialized padding.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RtPriorityThreadInfoInternal {
@@ -68,8 +70,6 @@ pub struct RtPriorityThreadInfoInternal {
     pid: libc::pid_t,
     /// The scheduling policy in place before promotion, to restore on demotion.
     policy: libc::c_int,
-    /// The scheduling parameters in place before promotion, to restore on demotion.
-    param: libc::sched_param,
 }
 
 impl RtPriorityThreadInfoInternal {
@@ -129,7 +129,6 @@ pub fn get_current_thread_info_internal(
         pthread_id,
         pid,
         policy,
-        param,
     })
 }
 
@@ -160,20 +159,18 @@ pub fn promote_current_thread_to_real_time_internal(
     Ok(RtPriorityHandleInternal { thread_info })
 }
 
-/// Restore the calling thread to the scheduling policy and parameters it had before promotion.
+/// Restore the calling thread to the scheduling policy it had before promotion.
 pub fn demote_current_thread_from_real_time_internal(
     rt_priority_handle: RtPriorityHandleInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     let RtPriorityThreadInfoInternal {
-        pthread_id,
-        policy,
-        param,
-        ..
+        pthread_id, policy, ..
     } = rt_priority_handle.thread_info;
 
     // Keep SCHED_RESET_ON_FORK set: the kernel forbids an unprivileged thread from clearing that
     // flag once set (and promotion set it), so restoring the bare saved policy would fail with
     // EPERM. The flag is harmless on a non-real-time thread.
+    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
     let rc =
         unsafe { libc::pthread_setschedparam(pthread_id, policy | SCHED_RESET_ON_FORK, &param) };
     if rc != 0 {
@@ -206,17 +203,18 @@ pub fn promote_thread_to_real_time_internal(
     Ok(RtPriorityHandleInternal { thread_info })
 }
 
-/// Restore a thread identified by its tid to the policy and parameters it had before promotion.
+/// Restore a thread identified by its tid to the scheduling policy it had before promotion.
 pub fn demote_thread_from_real_time_internal(
     thread_info: RtPriorityThreadInfoInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     // Keep SCHED_RESET_ON_FORK set (see demote_current_thread_from_real_time_internal): clearing it
     // as an unprivileged thread would fail with EPERM.
+    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
     let rc = unsafe {
         libc::sched_setscheduler(
             thread_info.thread_id as libc::pid_t,
             thread_info.policy | SCHED_RESET_ON_FORK,
-            &thread_info.param,
+            &param,
         )
     };
     if rc < 0 {
