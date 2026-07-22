@@ -108,9 +108,10 @@ fn sched_error(context: &str) -> AudioThreadPriorityError {
     AudioThreadPriorityError::new(&format!("{}: {}", context, OSError::last_os_error()))
 }
 
-/// Get the current thread information, capturing enough to promote or demote it later. This mirrors
-/// the rtkit path so the same public API works, but the returned struct is only meaningful within
-/// this process (the native path promotes directly rather than via a privileged helper).
+/// Get the current thread information, capturing enough to promote or demote it later, possibly from
+/// another process. The thread is identified by its system-wide tid, so a suitably privileged
+/// process can promote it via `promote_thread_to_real_time_internal`. This mirrors the rtkit path,
+/// except the native path changes the scheduler directly instead of delegating to the rtkit daemon.
 pub fn get_current_thread_info_internal(
 ) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
     let thread_id = unsafe { libc::syscall(libc::SYS_gettid) };
