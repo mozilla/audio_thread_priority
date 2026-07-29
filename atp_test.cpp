@@ -6,7 +6,6 @@
 #include "audio_thread_priority.h"
 
 int main() {
-#ifdef __linux__
   atp_thread_info* info = atp_get_current_thread_info();
   atp_thread_info* info2 = nullptr;
 
@@ -22,6 +21,7 @@ int main() {
   atp_free_thread_info(info);
   atp_free_thread_info(info2);
 
+#ifdef __linux__
   rv = atp_set_real_time_limit(0, 44100);
   assert(!rv);
 #endif

@@ -14,43 +14,109 @@ pub struct RtPriorityHandleInternal {
     previous_priority: libc::c_int,
 }
 
+/// Opaque, serializable information about a thread, possibly running in another process,
+/// sufficient to promote or demote it to/from real-time priority.
+///
+/// Android runs on the Linux kernel, and `setpriority()`/`getpriority()` with `PRIO_PROCESS`
+/// already operate on an individual kernel task (thread) given its `tid`, not just the calling
+/// thread, so no daemon or extra IPC is needed to target another therad. Doing so across
+/// processes additionally requires the caller to have the right privileges (matching uid, or
+/// `CAP_SYS_NICE`) to renice that thread, which is not generally available to sandboxed Android
+/// apps targeting another process, but works for another thread in the same process.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
+pub struct RtPriorityThreadInfoInternal {
+    pid: libc::pid_t,
+    tid: libc::pid_t,
+}
+
+impl RtPriorityThreadInfoInternal {
+    /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
+    pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
+        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
+    }
+    /// Get an RtPriorityThreadInfoInternal from a byte buffer.
+    pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
+        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
+    }
+    /// Returns the PID of the process containing the thread.
+    pub fn pid(&self) -> libc::pid_t {
+        self.pid
+    }
+}
+
+/// Get the current thread information, as an opaque struct, that can be serialized and sent
+/// across processes, to have another thread promoted to real-time.
+pub fn get_current_thread_info_internal(
+) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
+    Ok(RtPriorityThreadInfoInternal {
+        pid: unsafe { libc::getpid() },
+        tid: unsafe { libc::gettid() },
+    })
+}
+
 pub fn promote_current_thread_to_real_time_internal(
-    _: u32,
-    _: u32,
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
+    let thread_info = get_current_thread_info_internal()?;
+    promote_thread_to_real_time_internal(thread_info, audio_buffer_frames, audio_samplerate_hz)
+}
+
+pub fn demote_current_thread_from_real_time_internal(
+    h: RtPriorityHandleInternal,
+) -> Result<(), AudioThreadPriorityError> {
+    // Per https://github.com/android/ndk/issues/1255
+    // and https://android.googlesource.com/platform/bionic/+/master/libc/include/pthread.h#388,
+    // it's acceptable to call setpriority() directly for native threads.
+    let who = unsafe { libc::gettid().try_into().unwrap() };
+    let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, h.previous_priority) };
+    if r < 0 {
+        return Err(AudioThreadPriorityError::new(
+            "Failed to demote thread priority",
+        ));
+    }
+    Ok(())
+}
+
+/// Promote a thread (possibly in another process) identified by its thread info, to real-time.
+pub fn promote_thread_to_real_time_internal(
+    thread_info: RtPriorityThreadInfoInternal,
+    _audio_buffer_frames: u32,
+    _audio_samplerate_hz: u32,
 ) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
     // Android's Process.setThreadPriority() ultimately calls setpriority().
     // See https://android.googlesource.com/platform/frameworks/base/+/master/core/jni/android_util_Process.cpp#543
     // and https://android.googlesource.com/platform/system/core/+/master/libutils/Threads.cpp#312
-
-    // Per https://github.com/android/ndk/issues/1255
-    // and https://android.googlesource.com/platform/bionic/+/master/libc/include/pthread.h#388,
-    // it's acceptable to call setpriority() directly for native threads.
-
-    let who = unsafe { libc::gettid().try_into().unwrap() };
+    let who = thread_info.tid.try_into().unwrap();
 
     unsafe { (*libc::__errno()) = 0 };
     let previous_priority = unsafe { libc::getpriority(libc::PRIO_PROCESS, who) };
     if previous_priority == -1 && unsafe { *libc::__errno() } != 0 {
         return Err(AudioThreadPriorityError::new(
-            "Failed to get current thread priority",
+            "Failed to get thread priority",
         ));
     }
 
     let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, THREAD_PRIORITY_URGENT_AUDIO) };
     if r < 0 {
         return Err(AudioThreadPriorityError::new(
-            "Failed to set current thread priority",
+            "Failed to set thread priority",
         ));
     }
 
     Ok(RtPriorityHandleInternal { previous_priority })
 }
 
-pub fn demote_current_thread_from_real_time_internal(
-    h: RtPriorityHandleInternal,
+/// This can be called by sandboxed code, it only restores priority to what they were.
+pub fn demote_thread_from_real_time_internal(
+    thread_info: RtPriorityThreadInfoInternal,
 ) -> Result<(), AudioThreadPriorityError> {
-    let who = unsafe { libc::gettid().try_into().unwrap() };
-    let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, h.previous_priority) };
+    let who = thread_info.tid.try_into().unwrap();
+    // Unlike `demote_current_thread_from_real_time_internal`, the exact previous priority isn't
+    // available here (the promoting and demoting call may not happen in the same process), so
+    // this resets to the default niceness instead.
+    let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, 0) };
     if r < 0 {
         return Err(AudioThreadPriorityError::new(
             "Failed to demote thread priority",

@@ -4,22 +4,30 @@ use log::info;
 use std::sync::OnceLock;
 use windows_sys::{
     w,
-    Win32::Foundation::{HANDLE, WIN32_ERROR},
+    Win32::Foundation::{CloseHandle, HANDLE, WIN32_ERROR},
+    Win32::System::Threading::{
+        GetCurrentProcessId, GetCurrentThreadId, OpenThread, SetThreadPriority,
+        THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_TIME_CRITICAL, THREAD_QUERY_INFORMATION,
+        THREAD_SET_INFORMATION,
+    },
 };
 
+/// Two different mechanisms are used, depending on whether the thread being promoted is the
+/// calling thread or not:
+/// - The calling thread is registered with MMCSS (`avrt.dll`), which is the mechanism
+///   recommended by Microsoft for pro-audio applications, but that can only ever be used by a
+///   thread on itself: none of the `avrt.dll` APIs take a thread handle or id.
+/// - A thread other than the caller (possibly in another process) is bumped using the ordinary
+///   Win32 thread priority APIs instead, which do accept a `HANDLE` to an arbitrary thread.
 #[derive(Debug)]
-pub struct RtPriorityHandleInternal {
-    mmcss_task_index: u32,
-    task_handle: HANDLE,
-}
-
-impl RtPriorityHandleInternal {
-    fn new(mmcss_task_index: u32, task_handle: HANDLE) -> RtPriorityHandleInternal {
-        RtPriorityHandleInternal {
-            mmcss_task_index,
-            task_handle,
-        }
-    }
+pub enum RtPriorityHandleInternal {
+    Mmcss {
+        mmcss_task_index: u32,
+        task_handle: HANDLE,
+    },
+    ThreadPriority {
+        tid: u32,
+    },
 }
 
 fn avrt() -> Result<&'static AvRtLibrary, AudioThreadPriorityError> {
@@ -40,7 +48,10 @@ pub fn promote_current_thread_to_real_time_internal(
         .set_mm_thread_characteristics(w!("Audio"))
         .map(|(mmcss_task_index, task_handle)| {
             info!("task {mmcss_task_index} bumped to real time priority.");
-            RtPriorityHandleInternal::new(mmcss_task_index, task_handle)
+            RtPriorityHandleInternal::Mmcss {
+                mmcss_task_index,
+                task_handle,
+            }
         })
         .map_err(|win32_error| {
             AudioThreadPriorityError::new(&format!(
@@ -52,20 +63,111 @@ pub fn promote_current_thread_to_real_time_internal(
 pub fn demote_current_thread_from_real_time_internal(
     rt_priority_handle: RtPriorityHandleInternal,
 ) -> Result<(), AudioThreadPriorityError> {
-    let RtPriorityHandleInternal {
-        mmcss_task_index,
-        task_handle,
-    } = rt_priority_handle;
-    avrt()?
-        .revert_mm_thread_characteristics(task_handle)
-        .map(|_| {
-            info!("task {mmcss_task_index} priority restored.");
-        })
-        .map_err(|win32_error| {
-            AudioThreadPriorityError::new(&format!(
-                "Unable to restore the thread priority for task {mmcss_task_index} ({win32_error})"
-            ))
-        })
+    match rt_priority_handle {
+        RtPriorityHandleInternal::Mmcss {
+            mmcss_task_index,
+            task_handle,
+        } => avrt()?
+            .revert_mm_thread_characteristics(task_handle)
+            .map(|_| {
+                info!("task {mmcss_task_index} priority restored.");
+            })
+            .map_err(|win32_error| {
+                AudioThreadPriorityError::new(&format!(
+                    "Unable to restore the thread priority for task {mmcss_task_index} ({win32_error})"
+                ))
+            }),
+        RtPriorityHandleInternal::ThreadPriority { tid } => {
+            set_thread_priority(tid, THREAD_PRIORITY_NORMAL)
+        }
+    }
+}
+
+/// Opaque, serializable information about a thread, possibly running in another process,
+/// sufficient to promote or demote it to/from real-time priority.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
+pub struct RtPriorityThreadInfoInternal {
+    pid: u32,
+    tid: u32,
+}
+
+impl RtPriorityThreadInfoInternal {
+    /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
+    pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
+        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
+    }
+    /// Get an RtPriorityThreadInfoInternal from a byte buffer.
+    pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
+        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
+    }
+    /// Returns the PID of the process containing the thread.
+    pub fn pid(&self) -> i32 {
+        self.pid as i32
+    }
+}
+
+/// Get the current thread information, as an opaque struct, that can be serialized and sent
+/// accross processes, to have another thread promoted to real-time.
+pub fn get_current_thread_info_internal(
+) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
+    Ok(RtPriorityThreadInfoInternal {
+        pid: unsafe { GetCurrentProcessId() },
+        tid: unsafe { GetCurrentThreadId() },
+    })
+}
+
+fn open_thread(tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
+    let handle = unsafe { OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, 0, tid) };
+    if handle.is_null() {
+        return Err(AudioThreadPriorityError::new(&format!(
+            "OpenThread failed for thread {tid}"
+        )));
+    }
+    Ok(handle)
+}
+
+fn set_thread_priority(tid: u32, priority: i32) -> Result<(), AudioThreadPriorityError> {
+    let handle = open_thread(tid)?;
+    let rv = unsafe { SetThreadPriority(handle, priority) };
+    unsafe { CloseHandle(handle) };
+    if rv == 0 {
+        return Err(AudioThreadPriorityError::new(&format!(
+            "SetThreadPriority failed for thread {tid}"
+        )));
+    }
+    Ok(())
+}
+
+/// Promote a thread (possibly in another process) identified by its thread info, to real-time.
+///
+/// Unlike `promote_current_thread_to_real_time`, this can't use MMCSS: none of the `avrt.dll`
+/// APIs accept a thread id or handle, they only ever act on the calling thread. This instead
+/// raises the target thread's priority to `THREAD_PRIORITY_TIME_CRITICAL` via the ordinary Win32
+/// thread priority APIs, using a handle obtained with `OpenThread`, which works for a thread in
+/// another process too, given sufficient access rights.
+pub fn promote_thread_to_real_time_internal(
+    thread_info: RtPriorityThreadInfoInternal,
+    _audio_buffer_frames: u32,
+    _audio_samplerate_hz: u32,
+) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
+    set_thread_priority(thread_info.tid, THREAD_PRIORITY_TIME_CRITICAL)?;
+
+    info!(
+        "thread {} (pid {}) bumped to real time priority.",
+        thread_info.tid, thread_info.pid
+    );
+
+    Ok(RtPriorityHandleInternal::ThreadPriority {
+        tid: thread_info.tid,
+    })
+}
+
+/// This can be called by sandboxed code, it only restores priority to what they were.
+pub fn demote_thread_from_real_time_internal(
+    thread_info: RtPriorityThreadInfoInternal,
+) -> Result<(), AudioThreadPriorityError> {
+    set_thread_priority(thread_info.tid, THREAD_PRIORITY_NORMAL)
 }
 
 mod avrt_lib {

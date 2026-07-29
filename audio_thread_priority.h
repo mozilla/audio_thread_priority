@@ -53,26 +53,28 @@ int32_t atp_demote_current_thread_from_real_time(atp_handle *handle);
 int32_t atp_free_handle(atp_handle *handle);
 
 /*
- * Linux-only API.
+ * Promoting/demoting a thread other than the calling one.
  *
- * This set of functions promotes a thread from another process or thread, for
- * cases where the thread to promote cannot do so itself (for example because it
- * is sandboxed). With the default build the actual promotion goes through the
- * rtkit D-Bus service; when the library is built without the `dbus` feature it
- * is done directly, and requires the promoting process to be privileged.
+ * This is useful when the thread that needs to become real-time cannot
+ * promote itself directly (for example because it is sandboxed), possibly
+ * because it lives in another process.
  *
  * To do so:
- * - Set the real-time limit from within the process where a
- *   thread will be promoted. This is a `setrlimit` call, that can be done
- *   before the sandbox lockdown.
- * - Then, gather information on the thread that will be promoted.
+ * - Gather information on the thread that will be promoted, by calling
+ *   `atp_get_current_thread_info` on the thread itself.
  * - Serialize this info.
- * - Send over the serialized data via an IPC mechanism.
+ * - Send over the serialized data via an IPC mechanism, if the thread that
+ *   will do the promotion is in another process.
  * - Deserialize the info.
  * - Call `atp_promote_thread_to_real_time`.
+ *
+ * Promoting a thread other than the caller's, may require elevated privileges
+ * depending on the platform (for example, Linux uses a privileged rtkit D-Bus
+ * service, or requires the promoting process to be privileged when built
+ * without the `dbus` feature; macOS/iOS require `task_for_pid` rights when the
+ * thread lives in another process).
  */
 
-#ifdef __linux__
 /**
  * Promotes a thread, possibly in another process, to real-time priority.
  *
@@ -84,10 +86,6 @@ int32_t atp_free_handle(atp_handle *handle);
  * audio_samplerate_hz: sample-rate for this audio stream, in Hz
  *
  * Returns an opaque handle in case of success, NULL otherwise.
- *
- * This is useful on Linux only, to promote a thread from another process or
- * thread when the thread to promote cannot do so itself (for example because it
- * is sandboxed).
  */
 atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info);
 
@@ -96,10 +94,6 @@ atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info);
  * `atp_promote_thread_to_real_time`, back to its previous priority.
  *
  * Returns 0 in case of success, non-zero otherwise.
- *
- * This is useful on Linux only, to promote a thread from another process or
- * thread when the thread to promote cannot do so itself (for example because it
- * is sandboxed).
  */
 int32_t atp_demote_thread_from_real_time(atp_thread_info* thread_info);
 
@@ -109,10 +103,6 @@ int32_t atp_demote_thread_from_real_time(atp_thread_info* thread_info);
  *
  * Returns a non-null pointer to an `atp_thread_info` structure in case of
  * success, to be freed later with `atp_free_thread_info`, and NULL otherwise.
- *
- * This is useful on Linux only, to promote a thread from another process or
- * thread when the thread to promote cannot do so itself (for example because it
- * is sandboxed).
  */
 atp_thread_info *atp_get_current_thread_info();
 
@@ -136,6 +126,7 @@ void atp_serialize_thread_info(atp_thread_info *thread_info, uint8_t *bytes);
  * */
 atp_thread_info* atp_deserialize_thread_info(uint8_t *bytes);
 
+#ifdef __linux__
 /**
  * Set the real-time computation limit (RLIMIT_RTTIME) for the calling process.
  *
