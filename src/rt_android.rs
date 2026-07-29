@@ -28,6 +28,7 @@ pub struct RtPriorityHandleInternal {
 pub struct RtPriorityThreadInfoInternal {
     pid: libc::pid_t,
     tid: libc::pid_t,
+    previous_priority: libc::c_int,
 }
 
 impl RtPriorityThreadInfoInternal {
@@ -45,13 +46,29 @@ impl RtPriorityThreadInfoInternal {
     }
 }
 
+fn get_thread_priority(tid: libc::pid_t) -> Result<libc::c_int, AudioThreadPriorityError> {
+    let who = tid.try_into().unwrap();
+    unsafe { (*libc::__errno()) = 0 };
+    let priority = unsafe { libc::getpriority(libc::PRIO_PROCESS, who) };
+    if priority == -1 && unsafe { *libc::__errno() } != 0 {
+        return Err(AudioThreadPriorityError::new(
+            "Failed to get thread priority",
+        ));
+    }
+    Ok(priority)
+}
+
 /// Get the current thread information, as an opaque struct, that can be serialized and sent
 /// across processes, to have another thread promoted to real-time.
 pub fn get_current_thread_info_internal(
 ) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
+    let tid = unsafe { libc::gettid() };
+    let previous_priority = get_thread_priority(tid)?;
+
     Ok(RtPriorityThreadInfoInternal {
         pid: unsafe { libc::getpid() },
-        tid: unsafe { libc::gettid() },
+        tid,
+        previous_priority,
     })
 }
 
@@ -90,14 +107,6 @@ pub fn promote_thread_to_real_time_internal(
     // and https://android.googlesource.com/platform/system/core/+/master/libutils/Threads.cpp#312
     let who = thread_info.tid.try_into().unwrap();
 
-    unsafe { (*libc::__errno()) = 0 };
-    let previous_priority = unsafe { libc::getpriority(libc::PRIO_PROCESS, who) };
-    if previous_priority == -1 && unsafe { *libc::__errno() } != 0 {
-        return Err(AudioThreadPriorityError::new(
-            "Failed to get thread priority",
-        ));
-    }
-
     let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, THREAD_PRIORITY_URGENT_AUDIO) };
     if r < 0 {
         return Err(AudioThreadPriorityError::new(
@@ -105,18 +114,18 @@ pub fn promote_thread_to_real_time_internal(
         ));
     }
 
-    Ok(RtPriorityHandleInternal { previous_priority })
+    Ok(RtPriorityHandleInternal {
+        previous_priority: thread_info.previous_priority,
+    })
 }
 
-/// This can be called by sandboxed code, it only restores priority to what they were.
+/// This can be called by sandboxed code, it restores the priority the thread had when
+/// `get_current_thread_info` captured `thread_info`.
 pub fn demote_thread_from_real_time_internal(
     thread_info: RtPriorityThreadInfoInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     let who = thread_info.tid.try_into().unwrap();
-    // Unlike `demote_current_thread_from_real_time_internal`, the exact previous priority isn't
-    // available here (the promoting and demoting call may not happen in the same process), so
-    // this resets to the default niceness instead.
-    let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, 0) };
+    let r = unsafe { libc::setpriority(libc::PRIO_PROCESS, who, thread_info.previous_priority) };
     if r < 0 {
         return Err(AudioThreadPriorityError::new(
             "Failed to demote thread priority",

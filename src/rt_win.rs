@@ -6,11 +6,15 @@ use windows_sys::{
     w,
     Win32::Foundation::{CloseHandle, HANDLE, WIN32_ERROR},
     Win32::System::Threading::{
-        GetCurrentProcessId, GetCurrentThreadId, OpenThread, SetThreadPriority,
-        THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_TIME_CRITICAL, THREAD_QUERY_INFORMATION,
-        THREAD_SET_INFORMATION,
+        GetCurrentProcessId, GetCurrentThreadId, GetThreadPriority, OpenThread, SetThreadPriority,
+        THREAD_PRIORITY_TIME_CRITICAL, THREAD_QUERY_INFORMATION, THREAD_SET_INFORMATION,
     },
 };
+
+// `GetThreadPriority` returns this sentinel value on failure. It's defined as
+// `THREAD_PRIORITY_ERROR_RETURN` in `winbase.h`, but `windows-sys` only exposes it under
+// `Win32::System::WindowsProgramming`, a module this crate otherwise has no use for.
+const THREAD_PRIORITY_ERROR_RETURN: i32 = i32::MAX;
 
 /// Two different mechanisms are used, depending on whether the thread being promoted is the
 /// calling thread or not:
@@ -27,6 +31,7 @@ pub enum RtPriorityHandleInternal {
     },
     ThreadPriority {
         tid: u32,
+        previous_priority: i32,
     },
 }
 
@@ -77,9 +82,10 @@ pub fn demote_current_thread_from_real_time_internal(
                     "Unable to restore the thread priority for task {mmcss_task_index} ({win32_error})"
                 ))
             }),
-        RtPriorityHandleInternal::ThreadPriority { tid } => {
-            set_thread_priority(tid, THREAD_PRIORITY_NORMAL)
-        }
+        RtPriorityHandleInternal::ThreadPriority {
+            tid,
+            previous_priority,
+        } => set_thread_priority(tid, previous_priority),
     }
 }
 
@@ -90,6 +96,7 @@ pub fn demote_current_thread_from_real_time_internal(
 pub struct RtPriorityThreadInfoInternal {
     pid: u32,
     tid: u32,
+    previous_priority: i32,
 }
 
 impl RtPriorityThreadInfoInternal {
@@ -107,16 +114,6 @@ impl RtPriorityThreadInfoInternal {
     }
 }
 
-/// Get the current thread information, as an opaque struct, that can be serialized and sent
-/// accross processes, to have another thread promoted to real-time.
-pub fn get_current_thread_info_internal(
-) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
-    Ok(RtPriorityThreadInfoInternal {
-        pid: unsafe { GetCurrentProcessId() },
-        tid: unsafe { GetCurrentThreadId() },
-    })
-}
-
 fn open_thread(tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
     let handle = unsafe { OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, 0, tid) };
     if handle.is_null() {
@@ -125,6 +122,18 @@ fn open_thread(tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
         )));
     }
     Ok(handle)
+}
+
+fn get_thread_priority(tid: u32) -> Result<i32, AudioThreadPriorityError> {
+    let handle = open_thread(tid)?;
+    let priority = unsafe { GetThreadPriority(handle) };
+    unsafe { CloseHandle(handle) };
+    if priority == THREAD_PRIORITY_ERROR_RETURN {
+        return Err(AudioThreadPriorityError::new(&format!(
+            "GetThreadPriority failed for thread {tid}"
+        )));
+    }
+    Ok(priority)
 }
 
 fn set_thread_priority(tid: u32, priority: i32) -> Result<(), AudioThreadPriorityError> {
@@ -137,6 +146,20 @@ fn set_thread_priority(tid: u32, priority: i32) -> Result<(), AudioThreadPriorit
         )));
     }
     Ok(())
+}
+
+/// Get the current thread information, as an opaque struct, that can be serialized and sent
+/// accross processes, to have another thread promoted to real-time.
+pub fn get_current_thread_info_internal(
+) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
+    let tid = unsafe { GetCurrentThreadId() };
+    let previous_priority = get_thread_priority(tid)?;
+
+    Ok(RtPriorityThreadInfoInternal {
+        pid: unsafe { GetCurrentProcessId() },
+        tid,
+        previous_priority,
+    })
 }
 
 /// Promote a thread (possibly in another process) identified by its thread info, to real-time.
@@ -160,14 +183,16 @@ pub fn promote_thread_to_real_time_internal(
 
     Ok(RtPriorityHandleInternal::ThreadPriority {
         tid: thread_info.tid,
+        previous_priority: thread_info.previous_priority,
     })
 }
 
-/// This can be called by sandboxed code, it only restores priority to what they were.
+/// This can be called by sandboxed code, it restores the priority the thread had when
+/// `get_current_thread_info` captured `thread_info`.
 pub fn demote_thread_from_real_time_internal(
     thread_info: RtPriorityThreadInfoInternal,
 ) -> Result<(), AudioThreadPriorityError> {
-    set_thread_priority(thread_info.tid, THREAD_PRIORITY_NORMAL)
+    set_thread_priority(thread_info.tid, thread_info.previous_priority)
 }
 
 mod avrt_lib {
