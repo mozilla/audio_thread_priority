@@ -12,6 +12,7 @@
 
 extern crate libc;
 
+use std::convert::TryFrom;
 use std::io::Error as OSError;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -108,6 +109,13 @@ fn sched_error(context: &str) -> AudioThreadPriorityError {
     AudioThreadPriorityError::new(&format!("{}: {}", context, OSError::last_os_error()))
 }
 
+/// A thread's system-wide tid narrowed to `pid_t` for the scheduler syscalls. A tid always fits in
+/// `pid_t` (it is a pid), but convert defensively rather than truncating.
+fn scheduler_tid(thread_id: kernel_pid_t) -> Result<libc::pid_t, AudioThreadPriorityError> {
+    libc::pid_t::try_from(thread_id)
+        .map_err(|_| AudioThreadPriorityError::new("thread id does not fit in pid_t"))
+}
+
 /// Get the current thread information, capturing enough to promote or demote it later, possibly from
 /// another process. The thread is identified by its system-wide tid, so a suitably privileged
 /// process can promote it via `promote_thread_to_real_time_internal`. This mirrors the rtkit path,
@@ -187,16 +195,13 @@ pub fn promote_thread_to_real_time_internal(
     _audio_buffer_frames: u32,
     _audio_samplerate_hz: u32,
 ) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
+    let tid = scheduler_tid(thread_info.thread_id)?;
+
     let mut param = unsafe { std::mem::zeroed::<libc::sched_param>() };
     param.sched_priority = requested_priority();
 
-    let rc = unsafe {
-        libc::sched_setscheduler(
-            thread_info.thread_id as libc::pid_t,
-            libc::SCHED_FIFO | SCHED_RESET_ON_FORK,
-            &param,
-        )
-    };
+    let rc =
+        unsafe { libc::sched_setscheduler(tid, libc::SCHED_FIFO | SCHED_RESET_ON_FORK, &param) };
     if rc < 0 {
         return Err(sched_error("could not promote thread"));
     }
@@ -210,14 +215,10 @@ pub fn demote_thread_from_real_time_internal(
 ) -> Result<(), AudioThreadPriorityError> {
     // Keep SCHED_RESET_ON_FORK set (see demote_current_thread_from_real_time_internal): clearing it
     // as an unprivileged thread would fail with EPERM.
+    let tid = scheduler_tid(thread_info.thread_id)?;
     let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
-    let rc = unsafe {
-        libc::sched_setscheduler(
-            thread_info.thread_id as libc::pid_t,
-            thread_info.policy | SCHED_RESET_ON_FORK,
-            &param,
-        )
-    };
+    let rc =
+        unsafe { libc::sched_setscheduler(tid, thread_info.policy | SCHED_RESET_ON_FORK, &param) };
     if rc < 0 {
         return Err(sched_error("could not demote thread"));
     }
