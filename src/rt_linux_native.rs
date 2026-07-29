@@ -58,8 +58,6 @@ const SCHED_RESET_ON_FORK: libc::c_int = 0x4000_0000;
 #[allow(non_camel_case_types)]
 type kernel_pid_t = libc::c_long;
 
-// The fields are laid out to leave no padding (like the rtkit path's equivalent struct), so
-// `serialize` can transmute the whole struct to bytes without reading uninitialized padding.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RtPriorityThreadInfoInternal {
@@ -71,16 +69,49 @@ pub struct RtPriorityThreadInfoInternal {
     pid: libc::pid_t,
     /// The scheduling policy in place before promotion, to restore on demotion.
     policy: libc::c_int,
+    /// The scheduling priority in place before promotion, to restore on demotion.
+    priority: libc::c_int,
 }
 
 impl RtPriorityThreadInfoInternal {
-    /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
+    /// Serialize to a byte buffer. The fields are packed explicitly rather than transmuting the
+    /// struct, so no uninitialized padding bytes are ever read. Any trailing padding stays zero.
     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
-        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
+        let thread_id = self.thread_id.to_ne_bytes();
+        let pthread_id = self.pthread_id.to_ne_bytes();
+        let pid = self.pid.to_ne_bytes();
+        let policy = self.policy.to_ne_bytes();
+        let priority = self.priority.to_ne_bytes();
+
+        let mut bytes = [0u8; std::mem::size_of::<Self>()];
+        let fields = thread_id
+            .iter()
+            .chain(&pthread_id)
+            .chain(&pid)
+            .chain(&policy)
+            .chain(&priority);
+        for (dst, &src) in bytes.iter_mut().zip(fields) {
+            *dst = src;
+        }
+        bytes
     }
-    /// Get an RtPriorityThreadInfoInternal from a byte buffer.
+    /// Reconstruct from a byte buffer produced by `serialize`.
     pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
-        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
+        fn take<const N: usize>(src: &mut impl Iterator<Item = u8>) -> [u8; N] {
+            let mut chunk = [0u8; N];
+            for slot in &mut chunk {
+                *slot = src.next().unwrap();
+            }
+            chunk
+        }
+        let mut src = bytes.iter().copied();
+        RtPriorityThreadInfoInternal {
+            thread_id: kernel_pid_t::from_ne_bytes(take(&mut src)),
+            pthread_id: libc::pthread_t::from_ne_bytes(take(&mut src)),
+            pid: libc::pid_t::from_ne_bytes(take(&mut src)),
+            policy: libc::c_int::from_ne_bytes(take(&mut src)),
+            priority: libc::c_int::from_ne_bytes(take(&mut src)),
+        }
     }
     /// Returns the PID of the process containing the thread.
     pub fn pid(&self) -> libc::pid_t {
@@ -138,6 +169,7 @@ pub fn get_current_thread_info_internal(
         pthread_id,
         pid,
         policy,
+        priority: param.sched_priority,
     })
 }
 
@@ -173,13 +205,17 @@ pub fn demote_current_thread_from_real_time_internal(
     rt_priority_handle: RtPriorityHandleInternal,
 ) -> Result<(), AudioThreadPriorityError> {
     let RtPriorityThreadInfoInternal {
-        pthread_id, policy, ..
+        pthread_id,
+        policy,
+        priority,
+        ..
     } = rt_priority_handle.thread_info;
 
     // Keep SCHED_RESET_ON_FORK set: the kernel forbids an unprivileged thread from clearing that
     // flag once set (and promotion set it), so restoring the bare saved policy would fail with
     // EPERM. The flag is harmless on a non-real-time thread.
-    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+    let mut param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+    param.sched_priority = priority;
     let rc =
         unsafe { libc::pthread_setschedparam(pthread_id, policy | SCHED_RESET_ON_FORK, &param) };
     if rc != 0 {
@@ -216,7 +252,8 @@ pub fn demote_thread_from_real_time_internal(
     // Keep SCHED_RESET_ON_FORK set (see demote_current_thread_from_real_time_internal): clearing it
     // as an unprivileged thread would fail with EPERM.
     let tid = scheduler_tid(thread_info.thread_id)?;
-    let param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+    let mut param = unsafe { std::mem::zeroed::<libc::sched_param>() };
+    param.sched_priority = thread_info.priority;
     let rc =
         unsafe { libc::sched_setscheduler(tid, thread_info.policy | SCHED_RESET_ON_FORK, &param) };
     if rc < 0 {
