@@ -81,13 +81,59 @@ pub struct RtPriorityThreadInfoInternal {
 }
 
 impl RtPriorityThreadInfoInternal {
-    /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
+    /// Serialize to a byte buffer. The fields are packed explicitly rather than transmuting the
+    /// struct (there's a padding gap between `pid` and `thread_id` since the latter needs 8-byte
+    /// alignment), so no uninitialized padding bytes are ever read.
     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
-        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
+        let pid = self.pid.to_ne_bytes();
+        let thread_id = self.thread_id.to_ne_bytes();
+        let period = self.previous_time_constraint_policy.period.to_ne_bytes();
+        let computation = self
+            .previous_time_constraint_policy
+            .computation
+            .to_ne_bytes();
+        let constraint = self
+            .previous_time_constraint_policy
+            .constraint
+            .to_ne_bytes();
+        let preemptible = self
+            .previous_time_constraint_policy
+            .preemptible
+            .to_ne_bytes();
+
+        let mut bytes = [0u8; std::mem::size_of::<Self>()];
+        let fields = pid
+            .iter()
+            .chain(&thread_id)
+            .chain(&period)
+            .chain(&computation)
+            .chain(&constraint)
+            .chain(&preemptible);
+        for (dst, &src) in bytes.iter_mut().zip(fields) {
+            *dst = src;
+        }
+        bytes
     }
-    /// Get an RtPriorityThreadInfoInternal from a byte buffer.
+    /// Reconstruct from a byte buffer produced by `serialize`.
     pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
-        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
+        fn take<const N: usize>(src: &mut impl Iterator<Item = u8>) -> [u8; N] {
+            let mut chunk = [0u8; N];
+            for slot in &mut chunk {
+                *slot = src.next().unwrap();
+            }
+            chunk
+        }
+        let mut src = bytes.iter().copied();
+        RtPriorityThreadInfoInternal {
+            pid: libc::pid_t::from_ne_bytes(take(&mut src)),
+            thread_id: u64::from_ne_bytes(take(&mut src)),
+            previous_time_constraint_policy: thread_time_constraint_policy_data_t {
+                period: u32::from_ne_bytes(take(&mut src)),
+                computation: u32::from_ne_bytes(take(&mut src)),
+                constraint: u32::from_ne_bytes(take(&mut src)),
+                preemptible: boolean_t::from_ne_bytes(take(&mut src)),
+            },
+        }
     }
     /// Returns the PID of the process containing the thread.
     pub fn pid(&self) -> libc::pid_t {
@@ -132,14 +178,21 @@ fn resolve_thread_port(
         task_port
     };
 
+    // `task` is only a right we own (and must release) when it came from `task_for_pid`;
+    // `mach_task_self()` is a borrowed, static right that must not be deallocated. Centralizing
+    // this in one closure means every exit path below releases it exactly the same way.
+    let deallocate_task = || {
+        if !is_current_process {
+            unsafe { mach_port_deallocate(mach_task_self(), task) };
+        }
+    };
+
     let mut thread_list: thread_act_array_t = std::ptr::null_mut();
     let mut thread_count: mach_msg_type_number_t = 0;
 
     let kr = unsafe { task_threads(task, &mut thread_list, &mut thread_count) };
     if kr != KERN_SUCCESS {
-        if !is_current_process {
-            unsafe { mach_port_deallocate(mach_task_self(), task) };
-        }
+        deallocate_task();
         return Err(AudioThreadPriorityError::new("task_threads failed"));
     }
 
@@ -156,8 +209,15 @@ fn resolve_thread_port(
                 &mut count,
             )
         };
-        if found.is_none() && kr == KERN_SUCCESS && ident.thread_id == thread_id {
+        if kr == KERN_SUCCESS && ident.thread_id == thread_id {
             found = Some(port);
+            // No need to query the remaining threads now that the match is found; just
+            // deallocate their ports without another `thread_info` call each.
+            for j in (i + 1)..thread_count {
+                let port = unsafe { *thread_list.add(j as usize) };
+                unsafe { mach_port_deallocate(mach_task_self(), port) };
+            }
+            break;
         } else {
             unsafe { mach_port_deallocate(mach_task_self(), port) };
         }
@@ -171,9 +231,7 @@ fn resolve_thread_port(
         );
     }
 
-    if !is_current_process {
-        unsafe { mach_port_deallocate(mach_task_self(), task) };
-    }
+    deallocate_task();
 
     found.ok_or_else(|| {
         AudioThreadPriorityError::new(&format!(
