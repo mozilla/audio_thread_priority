@@ -462,8 +462,6 @@ pub unsafe extern "C" fn atp_demote_thread_from_real_time(
     }
 }
 
-cfg_if! {
-    if #[cfg(target_os = "linux")] {
 /// Set a real-time limit for the calling thread.
 ///
 /// This is only necessary and available on Linux desktop, and allows remoting the rtkit D-Bus
@@ -479,16 +477,17 @@ cfg_if! {
 /// # Return value
 ///
 /// 0 in case of success, 1 otherwise.
+#[cfg(target_os = "linux")]
 #[no_mangle]
-pub extern "C" fn atp_set_real_time_limit(audio_buffer_frames: u32,
-                                          audio_samplerate_hz: u32) -> i32 {
+pub extern "C" fn atp_set_real_time_limit(
+    audio_buffer_frames: u32,
+    audio_samplerate_hz: u32,
+) -> i32 {
     let r = set_real_time_hard_limit(audio_buffer_frames, audio_samplerate_hz);
     if r.is_err() {
         return 1;
     }
     0
-}
-    }
 }
 
 /// Promote the calling thread to real-time priority.
