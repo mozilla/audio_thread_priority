@@ -750,6 +750,28 @@ mod tests {
             done_rx.recv().unwrap();
         });
 
+        // Releases and joins the spawned thread on every exit path, including a panic from
+        // promotion/demotion below (`Drop` still runs while unwinding): otherwise a failing
+        // assertion here would leak that thread, parked on `done_rx.recv()` forever, and if the
+        // panic happened after a successful promotion, pinned at real-time priority for the rest
+        // of the test binary's lifetime.
+        struct ReleaseOnDrop {
+            done_tx: std::sync::mpsc::Sender<()>,
+            handle: Option<std::thread::JoinHandle<()>>,
+        }
+        impl Drop for ReleaseOnDrop {
+            fn drop(&mut self) {
+                let _ = self.done_tx.send(());
+                if let Some(handle) = self.handle.take() {
+                    let _ = handle.join();
+                }
+            }
+        }
+        let _release = ReleaseOnDrop {
+            done_tx,
+            handle: Some(handle),
+        };
+
         let info = info_rx.recv().unwrap();
 
         match promote_thread_to_real_time(info, 512, 44100) {
@@ -761,9 +783,6 @@ mod tests {
             Ok(_) => {}
             Err(e) => panic!("{}", e),
         }
-
-        done_tx.send(()).unwrap();
-        handle.join().unwrap();
     }
 
     cfg_if! {
