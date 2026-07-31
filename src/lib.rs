@@ -364,8 +364,12 @@ pub unsafe extern "C" fn atp_deserialize_thread_info(in_bytes: *mut u8) -> *mut 
 ///
 /// # Return value
 ///
-/// This function returns a `Result<RtPriorityHandle>`, which is an opaque struct to be passed to
-/// `demote_current_thread_from_real_time` to revert to the previous thread priority.
+/// This function returns a `Result<RtPriorityHandle>`. Unlike `promote_current_thread_to_real_time`,
+/// this handle should NOT be passed to `demote_current_thread_from_real_time`: use
+/// `demote_thread_from_real_time(thread_info)` instead, with the same `thread_info` used here, to
+/// revert to the previous thread priority (the promoting and demoting call may not happen on the
+/// same thread, or even in the same process, so the handle alone isn't sufficient on every
+/// platform).
 pub fn promote_thread_to_real_time(
     thread_info: RtPriorityThreadInfo,
     audio_buffer_frames: u32,
