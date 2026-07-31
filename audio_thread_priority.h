@@ -85,13 +85,19 @@ int32_t atp_free_handle(atp_handle *handle);
  * or an upper bound.
  * audio_samplerate_hz: sample-rate for this audio stream, in Hz
  *
- * Returns an opaque handle in case of success, NULL otherwise.
+ * Returns an opaque handle in case of success, NULL otherwise. Demote the thread with
+ * `atp_demote_thread_from_real_time` (using `thread_info`, not this handle). The returned handle
+ * is not needed for that call, but it is still heap-allocated and must be freed with
+ * `atp_free_handle` to avoid leaking it.
  */
 atp_handle *atp_promote_thread_to_real_time(atp_thread_info *thread_info);
 
 /**
  * Demotes a thread, promoted to real-time priority via
  * `atp_promote_thread_to_real_time`, back to its previous priority.
+ *
+ * This takes the same `thread_info` passed to `atp_promote_thread_to_real_time`, not the
+ * `atp_handle` it returned -- free that handle separately with `atp_free_handle`.
  *
  * Returns 0 in case of success, non-zero otherwise.
  */
