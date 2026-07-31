@@ -4,10 +4,11 @@ use log::info;
 use std::sync::OnceLock;
 use windows_sys::{
     w,
-    Win32::Foundation::{CloseHandle, HANDLE, WIN32_ERROR},
+    Win32::Foundation::{CloseHandle, FILETIME, HANDLE, WIN32_ERROR},
     Win32::System::Threading::{
-        GetCurrentProcessId, GetCurrentThreadId, GetThreadPriority, OpenThread, SetThreadPriority,
-        THREAD_PRIORITY_TIME_CRITICAL, THREAD_QUERY_INFORMATION, THREAD_SET_INFORMATION,
+        GetCurrentProcessId, GetCurrentThread, GetCurrentThreadId, GetThreadPriority,
+        GetThreadTimes, OpenThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+        THREAD_QUERY_INFORMATION, THREAD_SET_INFORMATION,
     },
 };
 
@@ -32,6 +33,10 @@ pub enum RtPriorityHandleInternal {
     ThreadPriority {
         tid: u32,
         previous_priority: i32,
+        // See `RtPriorityThreadInfoInternal::creation_time`: carried here too so that even a
+        // misuse of this handle for demotion (see `demote_current_thread_from_real_time_internal`)
+        // re-validates thread identity rather than trusting a possibly-recycled `tid`.
+        creation_time: u64,
     },
 }
 
@@ -85,28 +90,64 @@ pub fn demote_current_thread_from_real_time_internal(
         RtPriorityHandleInternal::ThreadPriority {
             tid,
             previous_priority,
-        } => set_thread_priority(tid, previous_priority),
+            creation_time,
+        } => set_thread_priority(tid, creation_time, previous_priority),
     }
 }
 
 /// Opaque, serializable information about a thread, possibly running in another process,
 /// sufficient to promote or demote it to/from real-time priority.
+///
+/// `creation_time` (from `GetThreadTimes`) is captured alongside `tid` because Windows thread ids
+/// are reused once a thread exits: without it, a `tid` captured here could, by the time
+/// `promote_thread_to_real_time`/`demote_thread_from_real_time` runs, refer to a completely
+/// different, unrelated thread that happened to be assigned the same id in the meantime.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct RtPriorityThreadInfoInternal {
     pid: u32,
     tid: u32,
     previous_priority: i32,
+    creation_time: u64,
 }
 
 impl RtPriorityThreadInfoInternal {
-    /// Serialize a RtPriorityThreadInfoInternal to a byte buffer.
+    /// Serialize to a byte buffer. The fields are packed explicitly rather than transmuting the
+    /// struct, matching the approach used on the other platforms, so the format doesn't silently
+    /// start reading uninitialized padding if a field is ever reordered or resized.
     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
-        unsafe { std::mem::transmute::<Self, [u8; std::mem::size_of::<Self>()]>(*self) }
+        let pid = self.pid.to_ne_bytes();
+        let tid = self.tid.to_ne_bytes();
+        let previous_priority = self.previous_priority.to_ne_bytes();
+        let creation_time = self.creation_time.to_ne_bytes();
+
+        let mut bytes = [0u8; std::mem::size_of::<Self>()];
+        let fields = pid
+            .iter()
+            .chain(&tid)
+            .chain(&previous_priority)
+            .chain(&creation_time);
+        for (dst, &src) in bytes.iter_mut().zip(fields) {
+            *dst = src;
+        }
+        bytes
     }
-    /// Get an RtPriorityThreadInfoInternal from a byte buffer.
+    /// Reconstruct from a byte buffer produced by `serialize`.
     pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
-        unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
+        fn take<const N: usize>(src: &mut impl Iterator<Item = u8>) -> [u8; N] {
+            let mut chunk = [0u8; N];
+            for slot in &mut chunk {
+                *slot = src.next().unwrap();
+            }
+            chunk
+        }
+        let mut src = bytes.iter().copied();
+        RtPriorityThreadInfoInternal {
+            pid: u32::from_ne_bytes(take(&mut src)),
+            tid: u32::from_ne_bytes(take(&mut src)),
+            previous_priority: i32::from_ne_bytes(take(&mut src)),
+            creation_time: u64::from_ne_bytes(take(&mut src)),
+        }
     }
     /// Returns the PID of the process containing the thread.
     pub fn pid(&self) -> i32 {
@@ -114,8 +155,18 @@ impl RtPriorityThreadInfoInternal {
     }
 }
 
-fn open_thread(tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
-    let handle = unsafe { OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, 0, tid) };
+impl PartialEq for RtPriorityThreadInfoInternal {
+    // Compares identity only (which thread, in which process, created when), not the captured
+    // `previous_priority`, matching `rt_mach.rs`/`rt_linux.rs`. `creation_time` is included because
+    // it's exactly what distinguishes the original thread from an unrelated one that later reused
+    // the same `tid`.
+    fn eq(&self, other: &Self) -> bool {
+        self.pid == other.pid && self.tid == other.tid && self.creation_time == other.creation_time
+    }
+}
+
+fn open_thread(access: u32, tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
+    let handle = unsafe { OpenThread(access, 0, tid) };
     if handle.is_null() {
         return Err(AudioThreadPriorityError::new(&format!(
             "OpenThread failed for thread {tid}"
@@ -124,8 +175,25 @@ fn open_thread(tid: u32) -> Result<HANDLE, AudioThreadPriorityError> {
     Ok(handle)
 }
 
+/// Read a thread's creation time (as an opaque, monotonically-increasing 64-bit value) via
+/// `GetThreadTimes`. Two live threads never share a creation time, and a given `tid` gets a new
+/// creation time once it's reused by a different thread, so comparing this is how thread identity
+/// is re-validated across the gap between capturing `RtPriorityThreadInfoInternal` and acting on
+/// it later.
+fn thread_creation_time(handle: HANDLE) -> Result<u64, AudioThreadPriorityError> {
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    let ok = unsafe { GetThreadTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    if ok == 0 {
+        return Err(AudioThreadPriorityError::new("GetThreadTimes failed"));
+    }
+    Ok(((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64)
+}
+
 fn get_thread_priority(tid: u32) -> Result<i32, AudioThreadPriorityError> {
-    let handle = open_thread(tid)?;
+    let handle = open_thread(THREAD_QUERY_INFORMATION, tid)?;
     let priority = unsafe { GetThreadPriority(handle) };
     unsafe { CloseHandle(handle) };
     if priority == THREAD_PRIORITY_ERROR_RETURN {
@@ -136,8 +204,35 @@ fn get_thread_priority(tid: u32) -> Result<i32, AudioThreadPriorityError> {
     Ok(priority)
 }
 
-fn set_thread_priority(tid: u32, priority: i32) -> Result<(), AudioThreadPriorityError> {
-    let handle = open_thread(tid)?;
+/// Open `tid` for `THREAD_SET_INFORMATION`, but only after confirming it's still the same thread
+/// `expected_creation_time` was captured for -- see `thread_creation_time`. This is what protects
+/// `set_thread_priority` from silently acting on an unrelated thread that reused a stale `tid`.
+fn open_thread_verified(
+    tid: u32,
+    expected_creation_time: u64,
+) -> Result<HANDLE, AudioThreadPriorityError> {
+    let handle = open_thread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, tid)?;
+    match thread_creation_time(handle) {
+        Ok(creation_time) if creation_time == expected_creation_time => Ok(handle),
+        Ok(_) => {
+            unsafe { CloseHandle(handle) };
+            Err(AudioThreadPriorityError::new(&format!(
+                "thread {tid} has exited and its id was reused by another thread"
+            )))
+        }
+        Err(e) => {
+            unsafe { CloseHandle(handle) };
+            Err(e)
+        }
+    }
+}
+
+fn set_thread_priority(
+    tid: u32,
+    expected_creation_time: u64,
+    priority: i32,
+) -> Result<(), AudioThreadPriorityError> {
+    let handle = open_thread_verified(tid, expected_creation_time)?;
     let rv = unsafe { SetThreadPriority(handle, priority) };
     unsafe { CloseHandle(handle) };
     if rv == 0 {
@@ -154,11 +249,15 @@ pub fn get_current_thread_info_internal(
 ) -> Result<RtPriorityThreadInfoInternal, AudioThreadPriorityError> {
     let tid = unsafe { GetCurrentThreadId() };
     let previous_priority = get_thread_priority(tid)?;
+    // `GetCurrentThread()` is a pseudo-handle valid without opening the thread; no `CloseHandle`
+    // needed.
+    let creation_time = thread_creation_time(unsafe { GetCurrentThread() })?;
 
     Ok(RtPriorityThreadInfoInternal {
         pid: unsafe { GetCurrentProcessId() },
         tid,
         previous_priority,
+        creation_time,
     })
 }
 
@@ -174,7 +273,11 @@ pub fn promote_thread_to_real_time_internal(
     _audio_buffer_frames: u32,
     _audio_samplerate_hz: u32,
 ) -> Result<RtPriorityHandleInternal, AudioThreadPriorityError> {
-    set_thread_priority(thread_info.tid, THREAD_PRIORITY_TIME_CRITICAL)?;
+    set_thread_priority(
+        thread_info.tid,
+        thread_info.creation_time,
+        THREAD_PRIORITY_TIME_CRITICAL,
+    )?;
 
     info!(
         "thread {} (pid {}) bumped to real time priority.",
@@ -184,6 +287,7 @@ pub fn promote_thread_to_real_time_internal(
     Ok(RtPriorityHandleInternal::ThreadPriority {
         tid: thread_info.tid,
         previous_priority: thread_info.previous_priority,
+        creation_time: thread_info.creation_time,
     })
 }
 
@@ -192,7 +296,11 @@ pub fn promote_thread_to_real_time_internal(
 pub fn demote_thread_from_real_time_internal(
     thread_info: RtPriorityThreadInfoInternal,
 ) -> Result<(), AudioThreadPriorityError> {
-    set_thread_priority(thread_info.tid, thread_info.previous_priority)
+    set_thread_priority(
+        thread_info.tid,
+        thread_info.creation_time,
+        thread_info.previous_priority,
+    )
 }
 
 mod avrt_lib {
