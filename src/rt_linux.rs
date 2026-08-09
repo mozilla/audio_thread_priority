@@ -12,7 +12,9 @@ use std::convert::TryInto;
 use std::error::Error;
 use std::io::Error as OSError;
 
-use dbus::{BusType, Connection, Message, MessageItem, Props};
+use dbus::arg::messageitem::{MessageItem, Props};
+use dbus::ffidisp::{BusType, Connection};
+use dbus::Message;
 
 use crate::AudioThreadPriorityError;
 
