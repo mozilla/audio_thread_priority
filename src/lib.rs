@@ -625,11 +625,12 @@ mod tests {
     #[cfg(feature = "terminal-logging")]
     use simple_logger;
 
-    // On the native (no-dbus) Linux build, promotion actually changes the scheduler, so it needs
-    // permission to request real-time scheduling. When the environment does not grant it (no
-    // RLIMIT_RTPRIO budget and not privileged), the promotion tests have nothing to exercise and
-    // skip rather than fail; CI raises the limit so they run for real.
-    #[cfg(all(target_os = "linux", not(feature = "dbus")))]
+    // On Linux, promotion actually changes the scheduler, so it needs permission to request
+    // real-time scheduling: an RLIMIT_RTPRIO budget or privilege for the native (no-dbus) build,
+    // and a reachable, willing rtkit-daemon for the dbus build. When the environment does not
+    // grant it, the promotion tests have nothing to exercise and skip rather than fail; CI for
+    // the native build raises the limit so they run for real.
+    #[cfg(target_os = "linux")]
     fn rt_scheduling_available() -> bool {
         match promote_current_thread_to_real_time(0, 44100) {
             Ok(handle) => {
@@ -639,21 +640,36 @@ mod tests {
                     .expect("demotion after a successful promotion should succeed");
                 true
             }
-            Err(_) => false,
+            Err(e) => {
+                // The error distinguishes a missing rtkit-daemon from an exhausted request
+                // budget; visible with --nocapture.
+                eprintln!("real-time scheduling unavailable: {e}");
+                false
+            }
         }
     }
 
+    // The promotion tests share the finite per-user budget rtkit-daemon grants, so they hold
+    // this lock to run one at a time; otherwise their combined realtime-thread count can cross
+    // the daemon's limit and fail promotions that would succeed in isolation.
+    #[cfg(target_os = "linux")]
+    static RT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn it_works() {
+        #[cfg(target_os = "linux")]
+        let _rt_lock = RT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         #[cfg(feature = "terminal-logging")]
         simple_logger::init().unwrap();
-        #[cfg(all(target_os = "linux", not(feature = "dbus")))]
+        {
+            // Argument validation fails before any promotion machinery runs, so this needs no
+            // real-time permission and works even where the guard below skips.
+            assert!(promote_current_thread_to_real_time(0, 0).is_err());
+        }
+        #[cfg(target_os = "linux")]
         if !rt_scheduling_available() {
             eprintln!("skipping it_works: real-time scheduling is not permitted here");
             return;
-        }
-        {
-            assert!(promote_current_thread_to_real_time(0, 0).is_err());
         }
         {
             match promote_current_thread_to_real_time(0, 44100) {
@@ -712,9 +728,37 @@ mod tests {
         }
     }
 
+    fn promote_and_demote_once() {
+        match promote_current_thread_to_real_time(0, 44100) {
+            Ok(handle) => {
+                demote_current_thread_from_real_time(handle)
+                    .expect("demotion after a successful promotion should succeed");
+            }
+            Err(e) => {
+                panic!("{}", e);
+            }
+        }
+    }
+
     #[test]
     fn it_works_in_different_threads() {
-        let handles: Vec<_> = (0..32).map(|_| std::thread::spawn(it_works)).collect();
+        #[cfg(target_os = "linux")]
+        let _rt_lock = RT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(target_os = "linux")]
+        if !rt_scheduling_available() {
+            eprintln!(
+                "skipping it_works_in_different_threads: real-time scheduling is not permitted here"
+            );
+            return;
+        }
+        // Each thread promotes once, and Linux keeps the thread count low: rtkit-daemon allows
+        // --actions-per-burst-max (default 25) requests per burst window for the whole user
+        // session, and the suite has to fit inside that budget for a cold `cargo test` run to
+        // pass. The other platforms have no such limit and keep the original concurrency level.
+        const THREADS: usize = if cfg!(target_os = "linux") { 4 } else { 32 };
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| std::thread::spawn(promote_and_demote_once))
+            .collect();
         for handle in handles {
             handle.join().unwrap()
         }
@@ -729,7 +773,21 @@ mod tests {
 
             #[test]
             fn test_linux_api() {
-                #[cfg(not(feature = "dbus"))]
+                let _rt_lock = RT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                // The serialization round trips only read scheduling parameters, so they need no
+                // real-time permission and work even where the guard below skips.
+                {
+                    let info = get_current_thread_info().unwrap();
+                    let bytes = info.serialize();
+                    let info2 = RtPriorityThreadInfo::deserialize(bytes);
+                    assert!(info == info2);
+                }
+                {
+                    let info = get_current_thread_info().unwrap();
+                    let bytes = thread_info_serialize(info);
+                    let info2 = thread_info_deserialize(bytes);
+                    assert!(info == info2);
+                }
                 if !rt_scheduling_available() {
                     eprintln!("skipping test_linux_api: real-time scheduling is not permitted here");
                     return;
@@ -743,21 +801,14 @@ mod tests {
                         }
                     }
                 }
-                {
-                    let info = get_current_thread_info().unwrap();
-                    let bytes = info.serialize();
-                    let info2 = RtPriorityThreadInfo::deserialize(bytes);
-                    assert!(info == info2);
-                }
-                {
-                    let info = get_current_thread_info().unwrap();
-                    let bytes = thread_info_serialize(info);
-                    let info2 = thread_info_deserialize(bytes);
-                    assert!(info == info2);
-                }
             }
             #[test]
             fn test_remote_promotion() {
+                let _rt_lock = RT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                if !rt_scheduling_available() {
+                    eprintln!("skipping test_remote_promotion: real-time scheduling is not permitted here");
+                    return;
+                }
                 let (rd, wr) = pipe().unwrap();
 
                 match unsafe { fork().expect("fork failed") } {
