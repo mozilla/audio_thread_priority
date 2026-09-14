@@ -142,6 +142,26 @@ fn sched_error(context: &str) -> AudioThreadPriorityError {
     AudioThreadPriorityError::new(&format!("{}: {}", context, OSError::last_os_error()))
 }
 
+/// Set the scheduling policy and priority of the thread with tid `tid`.
+///
+/// This goes through the syscall directly because musl's `sched_setscheduler` is a stub that always
+/// fails with `ENOSYS`: POSIX specifies it as process-scoped, which Linux does not provide. The
+/// syscall is per-thread, which is what is needed here.
+fn sched_setscheduler(
+    tid: libc::pid_t,
+    policy: libc::c_int,
+    param: &libc::sched_param,
+) -> libc::c_long {
+    unsafe {
+        libc::syscall(
+            libc::SYS_sched_setscheduler,
+            tid,
+            policy,
+            param as *const libc::sched_param,
+        )
+    }
+}
+
 /// A thread's system-wide tid narrowed to `pid_t` for the scheduler syscalls. A tid always fits in
 /// `pid_t` (it is a pid), but convert defensively rather than truncating.
 fn scheduler_tid(thread_id: kernel_pid_t) -> Result<libc::pid_t, AudioThreadPriorityError> {
@@ -238,8 +258,7 @@ pub fn promote_thread_to_real_time_internal(
     let mut param = unsafe { std::mem::zeroed::<libc::sched_param>() };
     param.sched_priority = requested_priority();
 
-    let rc =
-        unsafe { libc::sched_setscheduler(tid, libc::SCHED_FIFO | SCHED_RESET_ON_FORK, &param) };
+    let rc = sched_setscheduler(tid, libc::SCHED_FIFO | SCHED_RESET_ON_FORK, &param);
     if rc < 0 {
         return Err(sched_error("could not promote thread"));
     }
@@ -256,8 +275,7 @@ pub fn demote_thread_from_real_time_internal(
     let tid = scheduler_tid(thread_info.thread_id)?;
     let mut param = unsafe { std::mem::zeroed::<libc::sched_param>() };
     param.sched_priority = thread_info.priority;
-    let rc =
-        unsafe { libc::sched_setscheduler(tid, thread_info.policy | SCHED_RESET_ON_FORK, &param) };
+    let rc = sched_setscheduler(tid, thread_info.policy | SCHED_RESET_ON_FORK, &param);
     if rc < 0 {
         return Err(sched_error("could not demote thread"));
     }
